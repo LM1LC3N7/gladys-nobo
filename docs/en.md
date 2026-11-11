@@ -1,61 +1,93 @@
-# Demo Devices Template
+# Nobø Hub
 
-This is the user documentation of the integration. Gladys re-hosts this file
-and shows a permanent **Documentation** link to it in the Configuration screen
-(in the user's language, with English as the fallback) — it is when
-configuring that the user needs it most. Keep the short onboarding hints in
-the `section` blocks of the manifest `config_schema`; put the long
-step-by-step (screenshots, troubleshooting…) here.
+Brings the **zones of a Nobø Hub** (Nobø Energy Control, also sold as Ecohub)
+into Gladys, over your local network, through the local API that Glen Dimplex
+published for the hub (version 1.1). No account, no cloud.
+
+> Never tested with a real device: written from the official API document
+> only. Not affiliated with Glen Dimplex Nordic, not officially supported nor
+> endorsed by it. Please report what works and what does not.
 
 ## What you get
 
-Six demo devices show up after installation: a weather station (real data
-from Open-Meteo), a switch, a dimmable light, a smart plug with power
-metering, a motion sensor and a camera.
+One device per **zone** of the hub:
 
-## Configuration
+| Feature             | What it is                                                                    |
+| ------------------- | ----------------------------------------------------------------------------- |
+| Temperature         | The temperature of the zone (its Nobø Switch or sensor), when the hub has one |
+| Comfort temperature | The comfort temperature of the zone (°C, whole numbers, 7 to 30)              |
+| Eco temperature     | The eco temperature of the zone                                               |
+| Mode                | Week profile, comfort, eco or away: the standing choice of the zone           |
+| Mode in force       | Comfort, eco, away or off: what the zone does now (read only)                 |
 
-1. Open the **Configuration** tab of the integration.
-2. Set the **latitude** and **longitude** the demo weather station should
-   observe (they default to Paris), and pick your temperature unit.
-   The **refresh interval** sets how often the weather station and the
-   plug's power are read: every 5 minutes by default, every minute at most.
-3. Save: the devices appear in the **Discovery** tab, ready to be added.
+And one device for the **hub**, with the mode of the whole house.
 
-The **Prefer the local connection** toggle drives the demo plug: it reports
-the channel it actually uses as a badge (local or cloud), with an orange dot
-when it runs degraded (local refused, cloud fallback).
+The "mode in force" is worked out here from the overrides and the week profile
+of the zone, at the local time of the configured time zone: the hub does not
+send it. Week profiles are read with Monday first (to be checked on a real
+hub). A temperature the hub does not know (`N/A`) publishes nothing.
 
-## Actions
+## Setup
 
-- **Test the weather provider** — performs a live request to Open-Meteo and
-  shows the current temperature and humidity under the button.
-- **Identify a device** — pick one of your devices in the list and it will
-  signal itself (the demo light "blinks" in the logs).
+1. Read the **serial number** of the hub on its label (12 digits) and enter it.
+   The hub asks for it at every connection. It is kept by Gladys in its
+   database, never shown again, sent only to your hub.
+2. Leave the **IP address** empty: Gladys listens for the hub, which announces
+   itself every 2 s on UDP port 10000 (Gladys asks for this permission at the
+   install). If your network blocks that announcement, give the hub a fixed
+   address in your router and enter it.
+3. Check the **time zone** (Europe/Oslo by default): the local time is sent to
+   the hub at each connection, as the Nobø app does.
+4. Open **Discover**, add the zones you want.
 
-## Scenes
+The hub accepts two local clients at once: the Nobø app on the same network
+counts as one.
 
-The integration adds its own cards to the scene editor (Gladys 5.1 or
-later), under the **Integrations** category:
+## Commands (off by default)
 
-- **Motion detected** (trigger) — starts the scene when a demo motion sensor
-  sees something move. Optionally pick the sensor and what moved (person,
-  animal); left empty, any detection matches. The following actions can
-  read what moved with `{{triggerEvent.data.target}}`.
-- **Identify a device** (action) — makes the chosen device signal itself.
-  It returns whether the device could signal itself, so the following
-  actions can depend on it.
+Without any option, Gladys only reads, and can set the **away mode
+(anti-frost)**, which is always allowed. No command goes through a switch: a
+"turn everything off" never reaches the heating.
 
-## Dashboard
+- **Allow mode commands**: comfort, eco or back to the week profile, for a zone
+  or the whole house. Gladys writes a constant override, as the hub defines it.
+- **Allow temperature commands**: the comfort and eco temperatures of a zone,
+  whole numbers from 7 to 30 °C, comfort never below eco.
 
-Add the **Demo status** widget to a dashboard: it shows the live
-temperature of the weather station and the power of the office plug, the
-connection the plug currently uses (orange when degraded) and the observed
-location. Its **Identify the light** button makes the demo light signal
-itself.
+Each command is decided on the state of the live session (the hub pushes every
+change to its clients) and confirmed by the answer of the hub. Without an
+answer within 3.5 s, Gladys shows "sent, without confirmation"; if the hub
+answers other values, "not applied"; without a downloaded session, "nothing
+sent". Commands are written one at a time (a scene setting several zones waits
+its turn).
 
-## Troubleshooting
+### The away mode
 
-The integration logs everything it does: check the integration logs from the
-Gladys UI (or `docker logs` on the host) with `LOG_LEVEL=debug` for the full
-detail.
+The away mode (anti-frost) of a zone or of the whole house is the protective
+command: no option, no missing session, no full queue refuses it. It goes
+before the commands waiting, and those of its target (all of them, for the
+whole house) are dropped. Until the hub confirms it, it is kept in `/data`,
+sent right after the next handshake (also after a restart), and written again
+every 10 s, 3 times at most within 15 minutes. It is not sent again once a
+newer command of the same target has left, or once the hub reports another
+mode set on it (from the app, a switch).
+
+It can still fail, and Gladys says so: when the hub refuses it (an `E00`
+answer, its message shown), or when the hub stays unreachable for 15 minutes.
+
+## Status and troubleshooting
+
+- "Enter the 12-digit serial number": the field is empty or not 12 digits.
+- "The hub refused this serial number": check the label. Nothing is sent again
+  by itself; save a new serial number, or press **Test the connection** to try
+  once more.
+- "No hub with this serial number heard": enter the IP address of the hub.
+- "The hub does not answer": new tries after 5 s, 10 s, 20 s… up to 5 minutes.
+
+## Privacy
+
+The serial number never appears in logs, statuses, `/data`, nor device ids:
+only its first 9 digits, which the hub announces itself on your network, name
+the hub. `/data` holds the away commands waiting, the time of the last
+connection attempt and, after a refusal, 8 bits of a salted hash of the
+refused serial number.

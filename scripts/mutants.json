@@ -1,0 +1,226 @@
+[
+  {
+    "name": "modes option ignored",
+    "file": "src/app.js",
+    "from": "if (!this.config?.allowModes) throw",
+    "to": "if (false) throw"
+  },
+  {
+    "name": "setpoints option ignored",
+    "file": "src/app.js",
+    "from": "if (!this.config?.allowSetpoints) throw",
+    "to": "if (false) throw"
+  },
+  {
+    "name": "option not read again before the first byte",
+    "file": "src/app.js",
+    "from": "if (item.kind === 'mode' ? !this.config.allowModes : !this.config.allowSetpoints) {",
+    "to": "if (false) {"
+  },
+  {
+    "name": "setpoint lower bound",
+    "file": "src/app.js",
+    "from": "number < SETPOINT.min ||",
+    "to": "number < 0 ||"
+  },
+  {
+    "name": "setpoint upper bound",
+    "file": "src/app.js",
+    "from": "number > SETPOINT.max",
+    "to": "number > 99"
+  },
+  {
+    "name": "setpoint decimals accepted",
+    "file": "src/app.js",
+    "from": "!Number.isInteger(number) ||",
+    "to": "!Number.isFinite(number) ||"
+  },
+  {
+    "name": "comfort below eco accepted",
+    "file": "src/app.js",
+    "from": "if (wanted.comfort < wanted.eco) return fail(COMMAND.comfortBelowEco);",
+    "to": ""
+  },
+  {
+    "name": "confirmation without comparing the values",
+    "file": "src/app.js",
+    "from": "m.zone.comfort === wanted.comfort && m.zone.eco === wanted.eco",
+    "to": "true"
+  },
+  {
+    "name": "no answer taken as success",
+    "file": "src/app.js",
+    "from": "if (!answer) item.reject(new CommandError(COMMAND.unconfirmed, language));",
+    "to": "if (!answer) item.resolve();"
+  },
+  {
+    "name": "late command still sent",
+    "file": "src/app.js",
+    "from": "if (at > item.sendBy) return fail(COMMAND.late);",
+    "to": ""
+  },
+  {
+    "name": "command without a downloaded session",
+    "file": "src/app.js",
+    "from": "    if (this.sessionState !== 'ready')\n      return Promise.reject(new CommandError(COMMAND.notReady, language));",
+    "to": "",
+    "equivalent": true,
+    "why": "pump() checks the same state before the first byte and gives the same refusal at once; the early check only avoids queueing"
+  },
+  {
+    "name": "away gated by the modes option",
+    "file": "src/app.js",
+    "from": "if (mode === MODE.AWAY) return this.away(ref);",
+    "to": "if (mode === MODE.AWAY && this.config?.allowModes) return this.away(ref);"
+  },
+  {
+    "name": "away does not drop the queued commands of its target",
+    "file": "src/app.js",
+    "from": "for (const item of dropped) item.reject(new CommandError(COMMAND.cancelled, language));",
+    "to": "this.queue.push(...dropped);"
+  },
+  {
+    "name": "whole-house away drops only its own target",
+    "file": "src/app.js",
+    "from": "(ref.target === OVERRIDE_TARGET.HUB || sameTarget(item.ref, ref))",
+    "to": "sameTarget(item.ref, ref)"
+  },
+  {
+    "name": "away waits the whole answer of a command in flight",
+    "file": "src/app.js",
+    "from": "timer = this.timers.setTimeout(resolve, TIMINGS.protectiveWait)",
+    "to": "timer = this.timers.setTimeout(resolve, 3000)"
+  },
+  {
+    "name": "away not kept when no session",
+    "file": "src/app.js",
+    "from": "    this.memory.pending.push(entry);\n",
+    "to": ""
+  },
+  {
+    "name": "pending away not sent after the handshake",
+    "file": "src/app.js",
+    "from": "    // Away commands waiting: written right after the handshake, before anything else.\n    this.sendPending();",
+    "to": ""
+  },
+  {
+    "name": "pending away sends not bounded",
+    "file": "src/app.js",
+    "from": "p.sends < TIMINGS.protectiveSends",
+    "to": "p.sends < 99"
+  },
+  {
+    "name": "pending away life not bounded",
+    "file": "src/app.js",
+    "from": "now - p.at <= TIMINGS.protectiveLife &&",
+    "to": ""
+  },
+  {
+    "name": "future-dated pending away replayed",
+    "file": "src/store.js",
+    "from": "raw.at > now ||",
+    "to": ""
+  },
+  {
+    "name": "newer command does not cancel the away resend",
+    "file": "src/app.js",
+    "from": "    this.memory.pending = this.memory.pending.filter((p) => !sameTarget(p, ref));\n    if (before !== this.memory.pending.length) this.saveMemory();",
+    "to": ""
+  },
+  {
+    "name": "B03 of another mode does not stop the resend",
+    "file": "src/app.js",
+    "from": "(override.mode === OVERRIDE_MODE.AWAY || cmd === 'B03')",
+    "to": "override.mode === OVERRIDE_MODE.AWAY"
+  },
+  {
+    "name": "refused serial tried again",
+    "file": "src/app.js",
+    "from": "    if (this.isRefused()) {\n      await this.setStatus(false, STATUS.serialRefused);\n      return;\n    }",
+    "to": ""
+  },
+  {
+    "name": "restart connects at once",
+    "file": "src/app.js",
+    "from": "last + TIMINGS.reconnect[0] - this.now()",
+    "to": "0"
+  },
+  {
+    "name": "no backoff growth",
+    "file": "src/app.js",
+    "from": "    this.backoff += 1;\n",
+    "to": ""
+  },
+  {
+    "name": "announce of another hub accepted",
+    "file": "src/app.js",
+    "from": "match[1] === hubKey &&",
+    "to": ""
+  },
+  {
+    "name": "broadcast source accepted",
+    "file": "src/app.js",
+    "from": "const host = unicastAddress(entry?.source_ip);",
+    "to": "const host = entry?.source_ip;"
+  },
+  {
+    "name": "/data written over when unreadable",
+    "file": "src/app.js",
+    "from": "    if (!this.memoryLoaded) return Promise.resolve();\n",
+    "to": ""
+  },
+  {
+    "name": "states published before the download ended",
+    "file": "src/app.js",
+    "from": "  publishAll() {\n    if (this.sessionState !== 'ready' || !this.model) return;",
+    "to": "  publishAll() {\n    if (!this.model) return;"
+  },
+  {
+    "name": "N/A read as 0",
+    "file": "src/nobo/protocol.js",
+    "from": "if (typeof text !== 'string' || !/^-?\\d{1,3}(\\.\\d{1,4})?$/.test(text)) return null;",
+    "to": "if (typeof text !== 'string') return null; if (!/^-?\\d/.test(text)) return 0;"
+  },
+  {
+    "name": "line length not bounded",
+    "file": "src/nobo/session.js",
+    "from": "    if (this.buffer.length > LIMITS.lineBytes) this.close('line-too-long');",
+    "to": ""
+  },
+  {
+    "name": "keepalive sent too early",
+    "file": "src/nobo/session.js",
+    "from": "const due = this.lastWrite + TIMINGS.keepalive;",
+    "to": "const due = this.lastWrite + TIMINGS.keepalive / 2;"
+  },
+  {
+    "name": "G00 never times out",
+    "file": "src/nobo/session.js",
+    "from": "      if (!hub) throw new SessionError(this.closed ? 'closed' : 'timeout');",
+    "to": "      if (!hub) return new Promise(() => {});"
+  },
+  {
+    "name": "zone override does not win over the hub one",
+    "file": "src/nobo/model.js",
+    "from": "const layers = [this.overrideOn(OVERRIDE_TARGET.ZONE, zoneId)];",
+    "to": "const layers = [];"
+  },
+  {
+    "name": "hub override applied to zones that refuse it",
+    "file": "src/nobo/model.js",
+    "from": "if (zone.allowOverrides === 1) layers.push",
+    "to": "layers.push"
+  },
+  {
+    "name": "getConfig failure not retried",
+    "file": "src/app.js",
+    "from": "      this.configTimer = this.timers.setTimeout(() => {",
+    "to": "      this.configTimer = (() => {});\n      void (() => {"
+  },
+  {
+    "name": "secret in the logs",
+    "file": "src/app.js",
+    "from": "this.logger.warn('The hub refused the serial number');",
+    "to": "this.logger.warn(`The hub refused ${config.serialNumber}`);"
+  }
+]

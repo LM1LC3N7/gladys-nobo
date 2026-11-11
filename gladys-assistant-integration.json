@@ -1,177 +1,179 @@
 {
   "manifest_version": 1,
   "type": "device",
-  "name": "Demo Devices Template",
+  "name": "Nobø Hub",
   "description": {
-    "en": "Starter template showing sensors, a switch, a dimmable light and a smart plug.",
-    "fr": "Template de démarrage : capteurs, interrupteur, lampe variable et prise connectée."
+    "en": "Nobø electric heaters through the Nobø Hub (Ecohub): zones, modes, temperatures.",
+    "fr": "Radiateurs électriques Nobø par le Nobø Hub (Ecohub) : zones, modes, températures."
   },
-  "version": "1.0.0",
-  "docker_image": "ghcr.io/gladysassistant/integration-template-js:1.0.0",
+  "version": "0.1.0",
+  "docker_image": "ghcr.io/lm1lc3n7/gladys-nobo:0.1.0",
   "gladys_version": ">=5.1.0",
-  "cover_image": "https://raw.githubusercontent.com/GladysAssistant/integration-template-js/master/cover.png",
-  "categories": ["lighting", "security", "environment"],
-  "transports": ["local", "cloud"],
+  "cover_image": "https://raw.githubusercontent.com/LM1LC3N7/gladys-nobo/main/cover.png",
+  "categories": ["climate"],
+  "transports": ["local"],
+  "network_discovery": [{ "type": "udp-broadcast", "ports": [10000] }],
   "config_schema": [
     {
       "key": "intro",
       "type": "section",
-      "label": { "en": "Getting started", "fr": "Pour commencer" },
+      "label": {
+        "en": "Your Nobø Hub",
+        "fr": "Votre Nobø Hub"
+      },
       "description": {
-        "en": "The demo weather station reads real data from the free Open-Meteo API: pick the coordinates to observe. No account, no API key.",
-        "fr": "La station météo de démonstration lit de vraies données via l'API gratuite Open-Meteo : choisissez les coordonnées à observer. Pas de compte, pas de clé d'API."
+        "en": "Brings the zones of a Nobø Hub (Nobø Energy Control, Ecohub) into Gladys over your local network, through the local API published by Glen Dimplex: the temperature, the comfort and eco temperatures and the mode of each zone, and the mode of the whole house. Modes and temperatures can be changed from Gladys only once allowed below; the away mode (anti-frost) is always allowed. Never tested with a real device. Not affiliated with Glen Dimplex Nordic, not supported nor endorsed by it.",
+        "fr": "Amène dans Gladys les zones d'un Nobø Hub (Nobø Energy Control, Ecohub) sur votre réseau local, par l'API locale publiée par Glen Dimplex : la température, les températures confort et éco et le mode de chaque zone, et le mode de toute la maison. Modes et températures ne se changent depuis Gladys qu'une fois autorisés ci-dessous ; le mode absent (hors gel) est toujours permis. Jamais testé avec un vrai appareil. Sans lien avec Glen Dimplex Nordic, ni soutenu ni approuvé par lui."
       },
       "links": [
         {
-          "url": "https://open-meteo.com/en/docs",
-          "label": { "en": "Open-Meteo documentation", "fr": "Documentation Open-Meteo" }
+          "url": "https://github.com/LM1LC3N7/gladys-nobo/blob/main/docs/fr.md",
+          "label": {
+            "en": "Guide (French)",
+            "fr": "Guide (français)"
+          }
+        },
+        {
+          "url": "https://github.com/LM1LC3N7/gladys-nobo/blob/main/docs/en.md",
+          "label": {
+            "en": "Guide (English)",
+            "fr": "Guide (anglais)"
+          }
         }
       ]
     },
     {
-      "key": "latitude",
-      "type": "number",
-      "label": { "en": "Latitude", "fr": "Latitude" },
-      "description": {
-        "en": "Latitude used for the demo weather sensor.",
-        "fr": "Latitude utilisée par le capteur météo de démonstration."
+      "key": "serial",
+      "type": "secret",
+      "label": {
+        "en": "Serial number of the hub (12 digits)",
+        "fr": "Numéro de série du hub (12 chiffres)"
       },
-      "placeholder": { "en": "e.g. 48.8566", "fr": "ex. 48.8566" },
-      "required": true,
-      "default": 48.8566,
-      "min": -90,
-      "max": 90
+      "description": {
+        "en": "On the label under the hub. The hub asks for it at every connection. Kept by Gladys in its database, never shown again, sent only to your hub on your local network.",
+        "fr": "Sur l'étiquette sous le hub. Le hub le demande à chaque connexion. Gardé par Gladys dans sa base, jamais réaffiché, envoyé seulement à votre hub sur votre réseau local."
+      },
+      "required": true
     },
     {
-      "key": "longitude",
-      "type": "number",
-      "label": { "en": "Longitude", "fr": "Longitude" },
-      "description": {
-        "en": "Longitude used for the demo weather sensor.",
-        "fr": "Longitude utilisée par le capteur météo de démonstration."
+      "key": "host",
+      "type": "string",
+      "label": {
+        "en": "IP address of the hub (optional)",
+        "fr": "Adresse IP du hub (facultative)"
       },
-      "placeholder": { "en": "e.g. 2.3522", "fr": "ex. 2.3522" },
-      "required": true,
-      "default": 2.3522,
-      "min": -180,
-      "max": 180
+      "description": {
+        "en": "Empty: Gladys listens for the hub on the network (it announces itself every 2 s). Fill it in when the network blocks this announcement; give the hub a fixed address in your router then.",
+        "fr": "Vide : Gladys écoute le hub sur le réseau (il s'annonce toutes les 2 s). À remplir si le réseau bloque cette annonce ; donnez alors au hub une adresse fixe dans votre box."
+      },
+      "placeholder": {
+        "en": "192.168.1.50",
+        "fr": "192.168.1.50"
+      },
+      "required": false,
+      "default": ""
     },
     {
-      "key": "unit",
+      "key": "timezone",
+      "type": "string",
+      "label": {
+        "en": "Time zone of the house",
+        "fr": "Fuseau horaire de la maison"
+      },
+      "description": {
+        "en": "The local time sent to the hub at each connection, and used to tell which slot of the week profile is in force (IANA name).",
+        "fr": "L'heure locale envoyée au hub à chaque connexion, et qui sert à savoir quelle plage du programme hebdomadaire est en cours (nom IANA)."
+      },
+      "placeholder": {
+        "en": "Europe/Oslo",
+        "fr": "Europe/Paris"
+      },
+      "required": false,
+      "default": "Europe/Oslo"
+    },
+    {
+      "key": "commands_section",
+      "type": "section",
+      "label": {
+        "en": "Commands (off by default)",
+        "fr": "Commandes (désactivées par défaut)"
+      },
+      "description": {
+        "en": "Without these options, Gladys only reads, and sets the away mode (anti-frost), which is always allowed. No command goes through a switch: a \"turn everything off\" never reaches the heating.",
+        "fr": "Sans ces options, Gladys ne fait que lire, et passer en mode absent (hors gel), toujours permis. Aucune commande ne passe par un interrupteur : un « éteins tout » n'atteint jamais le chauffage."
+      }
+    },
+    {
+      "key": "allow_modes",
+      "type": "boolean",
+      "label": {
+        "en": "Allow mode commands",
+        "fr": "Autoriser les commandes de mode"
+      },
+      "description": {
+        "en": "The dashboard, the scenes and the voice assistants may set a zone or the whole house to comfort, eco, or back to its week profile.",
+        "fr": "Le tableau de bord, les scènes et les assistants vocaux peuvent passer une zone ou toute la maison en confort, en éco, ou la rendre à son programme hebdomadaire."
+      },
+      "required": false,
+      "default": false
+    },
+    {
+      "key": "allow_setpoints",
+      "type": "boolean",
+      "label": {
+        "en": "Allow temperature commands",
+        "fr": "Autoriser les commandes de température"
+      },
+      "description": {
+        "en": "The comfort and eco temperatures of a zone may be changed from Gladys (whole numbers, 7 to 30 °C, comfort never below eco).",
+        "fr": "Les températures confort et éco d'une zone peuvent être changées depuis Gladys (nombres entiers, 7 à 30 °C, confort jamais sous éco)."
+      },
+      "required": false,
+      "default": false
+    },
+    {
+      "key": "language",
       "type": "select",
-      "label": { "en": "Temperature unit", "fr": "Unité de température" },
-      "required": false,
-      "default": "celsius",
-      "options": [
-        { "value": "celsius", "label": { "en": "Celsius", "fr": "Celsius" } },
-        { "value": "fahrenheit", "label": { "en": "Fahrenheit", "fr": "Fahrenheit" } }
-      ]
-    },
-    {
-      "key": "poll_frequency",
-      "type": "number",
-      "label": { "en": "Refresh interval (s)", "fr": "Intervalle de rafraîchissement (s)" },
+      "label": {
+        "en": "Language of the names",
+        "fr": "Langue des noms"
+      },
       "description": {
-        "en": "How often sensors are polled, in seconds (one minute minimum).",
-        "fr": "Fréquence d'interrogation des capteurs, en secondes (une minute minimum)."
+        "en": "Used for the names of the devices, features and options added from now on.",
+        "fr": "Sert aux noms des appareils, fonctionnalités et options ajoutés désormais."
       },
       "required": false,
-      "default": 300,
-      "min": 60,
-      "max": 3600
+      "default": "fr",
+      "options": [
+        {
+          "value": "fr",
+          "label": {
+            "en": "French",
+            "fr": "Français"
+          }
+        },
+        {
+          "value": "en",
+          "label": {
+            "en": "English",
+            "fr": "Anglais"
+          }
+        }
+      ]
     }
   ],
   "actions": [
     {
-      "key": "test_weather",
-      "label": { "en": "Test the weather provider", "fr": "Tester le fournisseur météo" },
+      "key": "test_connection",
+      "label": {
+        "en": "Test the connection",
+        "fr": "Tester la connexion"
+      },
+      "description": {
+        "en": "Shows the state of the session with the hub. After a refused serial number, tries once again.",
+        "fr": "Affiche l'état de la session avec le hub. Après un numéro de série refusé, essaie une fois de plus."
+      },
       "timeout_seconds": 30
-    },
-    {
-      "key": "identify",
-      "label": { "en": "Identify a device", "fr": "Identifier un appareil" },
-      "fields": [
-        {
-          "key": "device",
-          "type": "select",
-          "source": "devices",
-          "label": { "en": "Device", "fr": "Appareil" },
-          "required": true
-        }
-      ]
-    }
-  ],
-  "scene_triggers": [
-    {
-      "key": "motion_detected",
-      "label": { "en": "Motion detected", "fr": "Mouvement détecté" },
-      "description": {
-        "en": "A demo motion sensor saw a person or an animal move.",
-        "fr": "Un détecteur de démonstration a vu bouger une personne ou un animal."
-      },
-      "fields": [
-        {
-          "key": "device",
-          "type": "select",
-          "source": "devices",
-          "label": { "en": "Sensor", "fr": "Détecteur" }
-        },
-        {
-          "key": "target",
-          "type": "multi_select",
-          "label": { "en": "What moved", "fr": "Ce qui a bougé" },
-          "options": [
-            { "value": "person", "label": { "en": "Person", "fr": "Personne" } },
-            { "value": "animal", "label": { "en": "Animal", "fr": "Animal" } }
-          ]
-        }
-      ],
-      "variables": [
-        {
-          "key": "target",
-          "type": "string",
-          "label": { "en": "What moved", "fr": "Ce qui a bougé" }
-        }
-      ]
-    }
-  ],
-  "scene_actions": [
-    {
-      "key": "identify_device",
-      "label": { "en": "Identify a device", "fr": "Identifier un appareil" },
-      "description": {
-        "en": "Make a device signal itself (the demo light blinks).",
-        "fr": "Fait se signaler un appareil (la lampe de démonstration clignote)."
-      },
-      "timeout_seconds": 15,
-      "fields": [
-        {
-          "key": "device",
-          "type": "select",
-          "source": "devices",
-          "label": { "en": "Device", "fr": "Appareil" },
-          "required": true
-        }
-      ],
-      "outputs": [
-        {
-          "key": "signalled",
-          "type": "boolean",
-          "label": { "en": "Device signalled", "fr": "Appareil signalé" }
-        }
-      ]
-    }
-  ],
-  "widgets": [
-    {
-      "key": "demo_status",
-      "label": { "en": "Demo status", "fr": "État de la démo" },
-      "description": {
-        "en": "Live temperature and plug power, plug connection and observed location.",
-        "fr": "Température et puissance en direct, connexion de la prise, position observée."
-      },
-      "icon": "activity",
-      "action_timeout_seconds": 15
     }
   ]
 }

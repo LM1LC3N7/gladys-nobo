@@ -1,67 +1,100 @@
-# Template de démonstration
+# Nobø Hub
 
-Ceci est la documentation utilisateur de l'intégration. Gladys ré-héberge ce
-fichier et affiche un lien **Documentation** permanent vers lui dans l'écran
-de configuration (dans la langue de l'utilisateur, avec l'anglais en repli) —
-c'est au moment de configurer que l'utilisateur en a le plus besoin. Gardez
-les courtes indications d'accueil dans les blocs `section` du `config_schema`
-du manifest ; mettez ici le pas-à-pas détaillé (captures d'écran, dépannage…).
+Amène dans Gladys les **zones d'un Nobø Hub** (Nobø Energy Control, aussi
+vendu comme Ecohub), sur votre réseau local, par l'API locale que Glen Dimplex
+a publiée pour le hub (version 1.1). Sans compte, sans cloud.
+
+> Jamais testé avec un vrai appareil : écrit d'après le seul document officiel
+> de l'API. Sans lien avec Glen Dimplex Nordic, ni soutenu ni approuvé par lui.
+> Dites-nous ce qui marche et ce qui ne marche pas.
 
 ## Ce que vous obtenez
 
-Six appareils de démonstration apparaissent après l'installation : une
-station météo (vraies données Open-Meteo), un interrupteur, une lampe
-variable, une prise connectée avec mesure de puissance, un détecteur de
-mouvement et une caméra.
+Un appareil par **zone** du hub :
 
-## Configuration
+| Fonctionnalité      | Ce que c'est                                                                    |
+| ------------------- | ------------------------------------------------------------------------------- |
+| Température         | La température de la zone (son Nobø Switch ou son capteur), si le hub en a une  |
+| Température confort | La température confort de la zone (°C, nombres entiers, 7 à 30)                 |
+| Température éco     | La température éco de la zone                                                   |
+| Mode                | Programme hebdomadaire, confort, éco ou absent : le choix en place pour la zone |
+| Mode en cours       | Confort, éco, absent ou arrêt : ce que fait la zone maintenant (lecture seule)  |
 
-1. Ouvrez l'onglet **Configuration** de l'intégration.
-2. Renseignez la **latitude** et la **longitude** que la station météo de
-   démonstration doit observer (Paris par défaut), et choisissez votre unité
-   de température. L'**intervalle de rafraîchissement** règle la fréquence
-   de lecture de la station météo et de la puissance de la prise : toutes
-   les 5 minutes par défaut, toutes les minutes au plus.
-3. Enregistrez : les appareils apparaissent dans l'onglet **Découverte**,
-   prêts à être ajoutés.
+Et un appareil pour le **hub**, avec le mode de toute la maison.
 
-Le réglage **Préférer la connexion locale** pilote la prise de
-démonstration : elle affiche en badge le canal réellement utilisé (local ou
-cloud), avec un point orange quand elle fonctionne en mode dégradé (local
-refusé, bascule cloud).
+Le « mode en cours » est déduit ici des dérogations et du programme
+hebdomadaire de la zone, à l'heure locale du fuseau configuré : le hub ne
+l'envoie pas. Les programmes sont lus en commençant par le lundi (à vérifier
+sur un vrai hub). Une température que le hub ne connaît pas (`N/A`) ne publie
+rien.
 
-## Actions
+## Installation
 
-- **Tester le fournisseur météo** — effectue une requête en direct vers
-  Open-Meteo et affiche la température et l'humidité actuelles sous le
-  bouton.
-- **Identifier un appareil** — choisissez un de vos appareils dans la liste
-  et il se signale (la lampe de démonstration « clignote » dans les logs).
+1. Relevez le **numéro de série** du hub sur son étiquette (12 chiffres) et
+   saisissez-le. Le hub le demande à chaque connexion. Il est gardé par Gladys
+   dans sa base, jamais réaffiché, envoyé seulement à votre hub.
+2. Laissez l'**adresse IP** vide : Gladys écoute le hub, qui s'annonce toutes
+   les 2 s sur le port UDP 10000 (Gladys demande cette permission à
+   l'installation). Si votre réseau bloque cette annonce, donnez au hub une
+   adresse fixe dans votre box et saisissez-la.
+3. Vérifiez le **fuseau horaire** (Europe/Oslo par défaut ; Europe/Paris en
+   France) : l'heure locale est envoyée au hub à chaque connexion, comme le
+   fait l'application Nobø.
+4. Ouvrez **Découverte**, ajoutez les zones voulues.
 
-## Scènes
+Le hub accepte deux clients locaux à la fois : l'application Nobø sur le même
+réseau en compte un.
 
-L'intégration ajoute ses propres cartes à l'éditeur de scènes (Gladys 5.1
-ou plus récent), dans la catégorie **Intégrations** :
+## Commandes (désactivées par défaut)
 
-- **Mouvement détecté** (déclencheur) — lance la scène quand un détecteur
-  de démonstration voit bouger quelque chose. Choisissez éventuellement le
-  détecteur et ce qui a bougé (personne, animal) ; laissés vides, toute
-  détection correspond. Les actions suivantes peuvent lire ce qui a bougé
-  avec `{{triggerEvent.data.target}}`.
-- **Identifier un appareil** (action) — fait se signaler l'appareil choisi.
-  Elle indique si l'appareil a pu se signaler, pour que les actions
-  suivantes puissent en dépendre.
+Sans option, Gladys ne fait que lire, et peut passer en **mode absent (hors
+gel)**, toujours permis. Aucune commande ne passe par un interrupteur : un
+« éteins tout » n'atteint jamais le chauffage.
 
-## Tableau de bord
+- **Autoriser les commandes de mode** : confort, éco ou retour au programme
+  hebdomadaire, pour une zone ou toute la maison. Gladys écrit une dérogation
+  constante, telle que le hub la définit.
+- **Autoriser les commandes de température** : les températures confort et
+  éco d'une zone, nombres entiers de 7 à 30 °C, confort jamais sous éco.
 
-Ajoutez le widget **État de la démo** à un tableau de bord : il affiche en
-direct la température de la station météo et la puissance de la prise du
-bureau, la connexion utilisée par la prise (en orange si dégradée) et la
-position observée. Son bouton **Identifier la lampe** fait se signaler la
-lampe de démonstration.
+Chaque commande est décidée sur l'état de la session en cours (le hub pousse
+chaque changement à ses clients) et confirmée par la réponse du hub. Sans
+réponse en 3,5 s, Gladys affiche « envoyée, sans confirmation » ; si le hub
+répond d'autres valeurs, « pas appliquée » ; sans session téléchargée,
+« rien envoyé ». Les commandes partent une à une (une scène qui règle
+plusieurs zones attend son tour).
 
-## Dépannage
+### Le mode absent
 
-L'intégration journalise tout ce qu'elle fait : consultez les logs de
-l'intégration depuis l'interface Gladys (ou `docker logs` sur l'hôte) avec
-`LOG_LEVEL=debug` pour le détail complet.
+Le mode absent (hors gel) d'une zone ou de toute la maison est la commande
+protectrice : ni option, ni session absente, ni file pleine ne le refusent. Il
+passe devant les commandes en attente, et celles de sa cible (toutes, pour
+toute la maison) sont abandonnées. Tant que le hub ne l'a pas confirmé, il est
+gardé dans `/data`, envoyé juste après la prochaine poignée de main (aussi
+après un redémarrage), et réécrit toutes les 10 s, 3 fois au plus en
+15 minutes. Il n'est plus renvoyé dès qu'une commande plus récente de la même
+cible est partie, ou dès que le hub signale un autre mode posé dessus
+(application, interrupteur).
+
+Il peut quand même échouer, et Gladys le dit : quand le hub le refuse (une
+réponse `E00`, son message affiché), ou quand le hub reste injoignable
+15 minutes.
+
+## États et dépannage
+
+- « Saisissez le numéro de série à 12 chiffres » : champ vide ou sans
+  12 chiffres.
+- « Le hub a refusé ce numéro de série » : vérifiez l'étiquette. Rien n'est
+  renvoyé tout seul ; enregistrez un nouveau numéro, ou appuyez sur **Tester
+  la connexion** pour un nouvel essai.
+- « Aucun hub de ce numéro de série entendu » : saisissez l'adresse IP du hub.
+- « Le hub ne répond pas » : nouveaux essais après 5 s, 10 s, 20 s… jusqu'à
+  5 minutes.
+
+## Vie privée
+
+Le numéro de série n'apparaît ni dans les journaux, ni dans les états, ni dans
+`/data`, ni dans les identifiants des appareils : seuls ses 9 premiers
+chiffres, que le hub annonce lui-même sur votre réseau, nomment le hub.
+`/data` garde les commandes « absent » en attente, l'heure du dernier essai de
+connexion et, après un refus, 8 bits d'une empreinte salée du numéro refusé.
