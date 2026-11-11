@@ -1,6 +1,6 @@
 {
   "name": "gladys-nobo",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "description": "Gladys Assistant external integration for Nobø electric heaters through the Nobø Hub (local API v1.1). Not affiliated with Glen Dimplex Nordic.",
   "type": "module",

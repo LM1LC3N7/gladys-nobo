@@ -6,8 +6,8 @@
     "en": "Nobø electric heaters through the Nobø Hub (Ecohub): zones, modes, temperatures.",
     "fr": "Radiateurs électriques Nobø par le Nobø Hub (Ecohub) : zones, modes, températures."
   },
-  "version": "0.1.0",
-  "docker_image": "ghcr.io/lm1lc3n7/gladys-nobo:0.1.0",
+  "version": "0.1.1",
+  "docker_image": "ghcr.io/lm1lc3n7/gladys-nobo:0.1.1",
   "gladys_version": ">=5.1.0",
   "cover_image": "https://raw.githubusercontent.com/LM1LC3N7/gladys-nobo/main/cover.png",
   "categories": ["climate"],

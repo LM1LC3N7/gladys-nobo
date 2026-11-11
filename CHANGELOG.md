@@ -10,6 +10,8 @@ the notes of the version's GitHub Release.
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-11-11
+
 ### Added
 
 - First version: the zones of a Nobø Hub over its local API v1.1 (TCP 27779),
@@ -19,3 +21,6 @@ the notes of the version's GitHub Release.
 - Commands off by default: modes (comfort, eco, week profile) and temperatures
   (whole numbers, 7 to 30 °C), each confirmed by the answer of the hub; the
   away mode (anti-frost) always allowed, kept in `/data` until confirmed.
+
+[Unreleased]: https://github.com/LM1LC3N7/gladys-nobo/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/LM1LC3N7/gladys-nobo/releases/tag/v0.1.1
