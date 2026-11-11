@@ -77,6 +77,13 @@ again once a newer mode of the same target has left from Gladys, or once the
 hub shows another mode set on it later (from the app, a switch); a
 temperature change does not stop it.
 
+This is deliberate, as the away mode is the protective command: when the hub
+answers slowly after a reconnection, a pending away mode leaves 3 s after the
+handshake without waiting for the download, and can then overwrite a choice
+made in the Nobø app while the connection was down. An away mode that ran out
+while Gladys or the integration was stopped is told at the next start (log
+and status), as below.
+
 The away mode of the whole house does not reach the zones that do not allow
 overrides (a setting of the zone in the Nobø app): set those zones one by one.
 

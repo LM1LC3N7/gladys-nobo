@@ -317,6 +317,22 @@ test('away in /data: not sent over a newer choice made in the app, nor when alre
   assert.equal(s.gladys.fake.lastState(ZF(1, 'mode-in-force')), 'comfort');
 });
 
+test('an away that ran out while the module was stopped is told at the start, as a give-up', async (t) => {
+  const store = memoryStore({
+    pending: [{ hubKey: HUB_KEY, target: 0, targetId: -1, at: NOW - 20 * MINUTE, sends: 2 }],
+  });
+  const s = await setup({ store });
+  t.after(() => s.app.shutdown());
+  assert.equal(written(s, 'A03').length, 0, 'not replayed');
+  assert.deepEqual(store.data.pending, []);
+  assert.equal(store.data.expired, undefined);
+  assert.ok(s.lines.some((l) => /Away mode of the whole house not applied by the hub/.test(l)));
+  assert.match(
+    s.gladys.fake.connectionStatus.message.fr,
+    /Mode absent de toute la maison NON appliqué/,
+  );
+});
+
 test('an away of 20 min ago, or dated in the future, is not replayed', async (t) => {
   const store = memoryStore({
     pending: [

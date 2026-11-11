@@ -80,6 +80,13 @@ qu'un mode plus récent de la même cible est parti de Gladys, ou dès que le hu
 montre un autre mode posé ensuite (application, interrupteur) ; un changement
 de température ne l'arrête pas.
 
+C'est voulu, car le mode absent est la commande de protection : quand le hub
+répond lentement après une reconnexion, un mode absent en attente part 3 s
+après la poignée de main sans attendre le téléchargement, et peut alors
+écraser un choix fait dans l'application Nobø pendant la coupure. Un mode
+absent arrivé à échéance pendant que Gladys ou l'intégration était arrêtée est
+signalé au démarrage suivant (journal et état), comme ci-dessous.
+
 Le mode absent de toute la maison n'atteint pas les zones qui n'autorisent pas
 les dérogations (un réglage de la zone dans l'application Nobø) : réglez ces
 zones une par une.

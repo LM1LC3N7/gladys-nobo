@@ -492,8 +492,14 @@ export class NoboApp {
           loaded.pending = loaded.pending.filter((q) => !sameTarget(p, q));
           loaded.pending.push(p);
         }
-        this.memory = loaded;
+        const { expired = [], ...kept } = loaded;
+        this.memory = kept;
         this.memoryLoaded = true;
+        // Away commands that ran out while the module was stopped: told, as a give-up.
+        if (expired.length > 0) {
+          this.saveMemory();
+          for (const p of expired) this.awayGivenUp(p);
+        }
       } catch (err) {
         // Unreadable is not empty: nothing is written over it; read again later.
         this.logger.warn(`Reading /data failed: ${err.message}`);

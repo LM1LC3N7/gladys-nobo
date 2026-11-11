@@ -116,8 +116,8 @@
   {
     "name": "future-dated pending away replayed",
     "file": "src/store.js",
-    "from": "raw.at > now ||",
-    "to": ""
+    "from": "if (!Number.isFinite(raw.at) || raw.at > now) return undefined;",
+    "to": "if (!Number.isFinite(raw.at)) return undefined;"
   },
   {
     "name": "newer command does not cancel the away resend",
@@ -364,5 +364,11 @@
     "file": "src/app.js",
     "from": "        }, TIMINGS.discoveryDebounce);",
     "to": "        }, 0);"
+  },
+  {
+    "name": "r3 m1: expired away at start not told",
+    "file": "src/app.js",
+    "from": "          for (const p of expired) this.awayGivenUp(p);",
+    "to": ""
   }
 ]

@@ -79,7 +79,7 @@ Handoff document: what is done, what was decided, what comes next.
   are read from /data at start, but the handshake needs the serial, which is
   never written to /data: they leave at the first session once Gladys gave the
   configuration (retried 5 s, 15 s, 1 min, then every 5 min).
-- **Mutants**: `scripts/mutants.json` (61, run by `memcap node scripts/mutants.mjs`),
+- **Mutants**: `scripts/mutants.json` (62, run by `memcap node scripts/mutants.mjs`),
   all killed (the early "no session" check of `enqueue` by a white-box test).
 - **Fresh state**: commands are decided on the live session state (the hub
   pushes every change); without a session whose G00 download ended, a

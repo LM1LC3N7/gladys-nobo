@@ -84,14 +84,15 @@ function pendingOf(raw, now) {
     return undefined;
   if (!Number.isInteger(targetId) || targetId < -1 || targetId > 1e6) return undefined;
   // A date in the future is not ours (clock jump, hand edit): dropped.
-  if (!Number.isFinite(raw.at) || raw.at > now || now - raw.at > TIMINGS.protectiveLife)
-    return undefined;
+  if (!Number.isFinite(raw.at) || raw.at > now) return undefined;
   const sends = Number.isInteger(raw.sends)
     ? Math.max(0, Math.min(raw.sends, TIMINGS.protectiveSends))
     : 0;
   const afterId =
     Number.isInteger(raw.afterId) && raw.afterId >= -1 && raw.afterId < 1e9 ? raw.afterId : null;
-  return { hubKey: raw.hubKey, target, targetId, at: raw.at, sends, afterId };
+  const entry = { hubKey: raw.hubKey, target, targetId, at: raw.at, sends, afterId };
+  // Past its 15 min (the module was stopped meanwhile): given up, told by the app.
+  return now - raw.at > TIMINGS.protectiveLife ? { expired: entry } : entry;
 }
 
 export function normalizeMemory(raw, now = Date.now()) {
@@ -104,14 +105,17 @@ export function normalizeMemory(raw, now = Date.now()) {
     r && HUB_KEY.test(r.hubKey) && typeof r.mark === 'string' && /^[0-9a-f]{2}$/.test(r.mark)
       ? { hubKey: r.hubKey, mark: r.mark }
       : null;
-  const pending = (Array.isArray(raw?.pending) ? raw.pending.slice(0, LIMITS.pending) : [])
+  const read = (Array.isArray(raw?.pending) ? raw.pending.slice(0, LIMITS.pending) : [])
     .map((p) => pendingOf(p, now))
     .filter(Boolean);
+  const pending = read.filter((p) => !p.expired);
+  const expired = read.filter((p) => p.expired).map((p) => p.expired);
   const last = raw?.lastAttemptAt;
   return {
     salt,
     refusal,
     pending,
+    expired,
     lastAttemptAt: Number.isFinite(last) && last > 0 && last <= now ? last : null,
   };
 }
