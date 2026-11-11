@@ -146,6 +146,10 @@ export const TIMINGS = {
   protectiveWait: 250,
   /** An away command not confirmed is written again (6 times at most, a new session each time), until this deadline. */
   protectiveRetry: 10 * SECOND,
+  /** Away commands waiting at a new session leave after its download, or by then whatever. */
+  protectiveSyncWait: 3 * SECOND,
+  /** Discovery published again 1 s after the last change of a zone or of the hub. */
+  discoveryDebounce: SECOND,
   protectiveLife: 15 * MINUTE,
   protectiveSends: 6,
   /** The configuration of Gladys not read: new tries 5 s, 15 s, 1 min, then every 5 min. */

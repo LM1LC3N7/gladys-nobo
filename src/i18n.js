@@ -52,6 +52,16 @@ export const STATUS = {
     'The serial number must have 12 digits.',
     'Le numéro de série doit avoir 12 chiffres.',
   ),
+  awayNotApplied: (zoneId) =>
+    zoneId === null
+      ? both(
+          'Away mode of the whole house NOT applied: the hub never showed it (6 sends or 15 min). Set it again or check the hub.',
+          'Mode absent de toute la maison NON appliqué : le hub ne l’a jamais montré (6 envois ou 15 min). Reposez-le ou vérifiez le hub.',
+        )
+      : both(
+          `Away mode of zone ${zoneId} NOT applied: the hub never showed it (6 sends or 15 min). Set it again or check the hub.`,
+          `Mode absent de la zone ${zoneId} NON appliqué : le hub ne l’a jamais montré (6 envois ou 15 min). Reposez-le ou vérifiez le hub.`,
+        ),
   timezoneInvalid: both(
     'The time zone is not a known IANA name (e.g. Europe/Oslo, Europe/Paris): fix it.',
     'Le fuseau horaire n’est pas un nom IANA connu (ex. Europe/Oslo, Europe/Paris) : corrigez-le.',

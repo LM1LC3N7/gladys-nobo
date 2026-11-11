@@ -142,7 +142,9 @@ test('a refused serial: status, kept in /data as an 8-bit mark, never sent again
   await again.gladys.fake.configUpdated?.({ serial: SERIAL, host: ADDRESS });
   if (!again.gladys.fake.configUpdated)
     await again.app.configUpdated({ serial: SERIAL, host: ADDRESS });
-  await again.wait(6 * SECOND);
+  for (let i = 0; i < 30 && !again.gladys.fake.connectionStatus.connected; i += 1) {
+    await again.wait(SECOND);
+  }
   assert.equal(again.gladys.fake.connectionStatus.connected, true);
   assert.equal(store.data.refusal, null, 'lifted by the success');
 });
@@ -320,6 +322,31 @@ test('an invalid time zone: a clear status, no connection (its time would go to 
   t.after(() => s.app.shutdown());
   assert.equal(s.hub.connections, 0);
   assert.match(s.gladys.fake.connectionStatus.message.en, /time zone is not a known IANA name/);
+});
+
+test('m2: a G00 asked again publishes the discovery once, not per line', async (t) => {
+  const s = await setup();
+  t.after(() => s.app.shutdown());
+  await s.wait(SECOND);
+  const before = s.gladys.fake.requests.filter((r) => /discover/.test(r.path)).length;
+  await s.wait(80 * SECOND);
+  assert.equal(s.hub.lines.filter((l) => l === 'G00').length, 2, 'the probe ran');
+  const after = s.gladys.fake.requests.filter((r) => /discover/.test(r.path)).length;
+  assert.ok(after - before <= 1, `${after - before} publications`);
+});
+
+test('m2: zone changes 100 ms apart publish the discovery once', async (t) => {
+  const s = await setup();
+  t.after(() => s.app.shutdown());
+  await s.wait(2 * SECOND);
+  const count = () => s.gladys.fake.requests.filter((r) => /discover/.test(r.path)).length;
+  const before = count();
+  for (const name of ['A', 'B', 'C']) {
+    s.hub.push(`V00 1 ${name} 1 22 17 1 -1`);
+    await s.wait(100);
+  }
+  await s.wait(2 * SECOND);
+  assert.equal(count() - before, 1);
 });
 
 test('the language: English names when asked', async (t) => {

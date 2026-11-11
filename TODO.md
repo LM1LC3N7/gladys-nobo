@@ -30,6 +30,10 @@ Handoff document: what is done, what was decided, what comes next.
 - Whether B03 is pushed to every client (used to confirm and to stop the
   resend of an away command), and whether KEEPALIVE gets an answer (none is
   needed here; the session relies on TCP keepalive and the hub closing it).
+- Whether override ids grow and are never reused (a newer choice made in the
+  app between two sessions is told by an id above the newest one known when
+  the away was clicked), and whether our own away override is listed by the
+  G00 of the next session (it confirms a pending away).
 - Whether a zone that does not allow overrides refuses a zone override (E00).
 - The temperature of a zone: the components named as its sensor, else every
   component of the zone that reports one (mean).
@@ -64,11 +68,18 @@ Handoff document: what is done, what was decided, what comes next.
   a new session, so a newer choice made in the app (override id above the one
   known when the away was made) is never overwritten; a temperature no
   longer stops its resend; an invalid time zone is a status, not Oslo.
+- **Review r2 fixes** (2026-11-11): `afterId` null without a complete
+  download, -1 for a complete one without overrides (a choice made in the app
+  between two sessions is never overwritten); a pending away leaves 3 s after
+  the handshake at the latest, also when the download fails, and keeps its
+  10 s retry whatever closes the session; a given-up away is logged and shown
+  as the status until a confirmed away or a click; an invalid time zone closes
+  the session opened for an away; discovery published once per burst.
 - **Away after a restart needs the configuration**: the pending away commands
   are read from /data at start, but the handshake needs the serial, which is
   never written to /data: they leave at the first session once Gladys gave the
   configuration (retried 5 s, 15 s, 1 min, then every 5 min).
-- **Mutants**: `scripts/mutants.json` (49, run by `memcap node scripts/mutants.mjs`),
+- **Mutants**: `scripts/mutants.json` (61, run by `memcap node scripts/mutants.mjs`),
   all killed (the early "no session" check of `enqueue` by a white-box test).
 - **Fresh state**: commands are decided on the live session state (the hub
   pushes every change); without a session whose G00 download ended, a

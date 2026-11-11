@@ -552,3 +552,268 @@ test('away pending while the hub stays down: tries spaced 10 s, given up after 1
   await s.wait(10 * MINUTE);
   assert.ok(s.hub.connections - after <= 3, 'back to the backoff (5 min at most)');
 });
+
+test('I3: a choice made in the app between two sessions, with no override known at the click, is never overwritten', async (t) => {
+  const s = await setup();
+  t.after(() => s.app.shutdown());
+  assert.equal(s.hub.world.overrides.length, 0, 'the house follows its programme');
+  s.hub.silent = true;
+  const ack = await s.cmd(ZF(1, 'mode'), 'away');
+  assert.match(ack.error, /sans confirmation/);
+  assert.equal(s.store.data.pending[0].afterId, -1, 'a complete download without any override');
+  // Between the two sessions, comfort for 2 hours from the app.
+  s.hub.world.overrides.push({
+    id: s.hub.world.nextOverride++,
+    mode: 1,
+    type: 1,
+    end: '202611111300',
+    target: 1,
+    targetId: 1,
+  });
+  s.hub.silent = false;
+  await s.wait(MINUTE);
+  assert.equal(written(s, 'A03').length, 1);
+  assert.deepEqual(s.store.data.pending, []);
+  assert.equal(s.gladys.fake.lastState(ZF(1, 'mode')), 'comfort');
+});
+
+test('I3: an away made without a complete download (no order known) is still sent over an older override', async (t) => {
+  const world = defaultWorld();
+  world.overrides.push({ id: 4, mode: 1, type: 3, target: 1, targetId: 1 });
+  const store = memoryStore({
+    pending: [{ hubKey: HUB_KEY, target: 1, targetId: 1, at: NOW - MINUTE, sends: 1 }],
+  });
+  const s = await setup({ store, world });
+  t.after(() => s.app.shutdown());
+  await s.wait(SECOND);
+  assert.deepEqual(written(s, 'A03'), ['A03 -1 3 3 -1 -1 1 1']);
+  assert.deepEqual(store.data.pending, []);
+});
+
+function slowG00(s, { never = false, delay = 0 } = {}) {
+  const original = s.hub.createConnection;
+  s.app.createConnection = (o) => {
+    const sock = original(o);
+    const handle = sock.handle.bind(sock);
+    sock.handle = (line) => {
+      if (line !== 'G00') return handle(line);
+      if (never) return sock.send('H00');
+      return s.clock.sleep(delay).then(() => handle(line));
+    };
+    return sock;
+  };
+}
+
+test('I4: an away from /data leaves within 3 s even when the download never ends', async (t) => {
+  const store = memoryStore({
+    pending: [{ hubKey: HUB_KEY, target: 1, targetId: 1, at: NOW - MINUTE, sends: 1 }],
+  });
+  const s = await setup({ store, start: false });
+  t.after(() => s.app.shutdown());
+  slowG00(s, { never: true });
+  await s.gladys.connect();
+  await s.wait(2 * SECOND);
+  assert.equal(written(s, 'A03').length, 0, 'the download first');
+  await s.wait(1100);
+  assert.deepEqual(written(s, 'A03'), ['A03 -1 3 3 -1 -1 1 1']);
+  assert.deepEqual(store.data.pending, [], 'applied: B03');
+});
+
+test('I4: a download that fails at once still lets the waiting away leave before the close', async (t) => {
+  const store = memoryStore({
+    pending: [{ hubKey: HUB_KEY, target: 1, targetId: 1, at: NOW - MINUTE, sends: 1 }],
+  });
+  const s = await setup({ store, start: false });
+  t.after(() => s.app.shutdown());
+  s.app.createConnection = (o) => {
+    const sock = s.hub.createConnection(o);
+    const handle = sock.handle.bind(sock);
+    sock.handle = (line) => (line === 'G00' ? sock.send(`H01 ${'x'.repeat(9000)}`) : handle(line));
+    return sock;
+  };
+  await s.gladys.connect();
+  await s.wait(500);
+  assert.equal(written(s, 'A03').length, 0, 'a line too long closes the session itself');
+  // The retry of the waiting away opens a new session, whose download is slow but ends.
+  s.app.createConnection = s.hub.createConnection;
+  await s.wait(20 * SECOND);
+  assert.ok(written(s, 'A03').length >= 1);
+});
+
+test('K2: an away written early (slow download) is not written again in the same session', async (t) => {
+  const store = memoryStore({
+    pending: [{ hubKey: HUB_KEY, target: 1, targetId: 1, at: NOW - MINUTE, sends: 1 }],
+  });
+  const s = await setup({ store, start: false });
+  t.after(() => s.app.shutdown());
+  s.hub.latency = 0;
+  // A03 answered late (after the download ends at 3.2 s).
+  const original = s.hub.createConnection;
+  s.app.createConnection = (o) => {
+    const sock = original(o);
+    const handle = sock.handle.bind(sock);
+    sock.handle = (line) =>
+      line === 'G00'
+        ? s.clock.sleep(3200).then(() => handle(line))
+        : line.startsWith('A03')
+          ? s.clock.sleep(1000).then(() => handle(line))
+          : handle(line);
+    return sock;
+  };
+  await s.gladys.connect();
+  await s.wait(10 * SECOND);
+  assert.deepEqual(written(s, 'A03'), ['A03 -1 3 3 -1 -1 1 1']);
+  assert.equal(s.hub.connections, 1);
+});
+
+test('I5: an away never shown by the hub is given up with a warning and a status that stays', async (t) => {
+  const s = await setup();
+  t.after(() => s.app.shutdown());
+  s.hub.silent = true;
+  await s.cmd(ZF(1, 'mode'), 'away');
+  await s.wait(2 * MINUTE);
+  assert.equal(written(s, 'A03').length, 6);
+  assert.deepEqual(s.store.data.pending, []);
+  assert.ok(
+    s.lines.some((l) => /Away mode of zone 1 not applied by the hub/.test(l)),
+    s.lines.join('\n'),
+  );
+  const status = s.gladys.fake.connectionStatus;
+  assert.equal(status.connected, false);
+  assert.match(status.message.fr, /Mode absent de la zone 1 NON appliqué/);
+  const from = s.gladys.fake.connectionStatuses.findIndex((x) =>
+    /NON appliqué/.test(x.message?.fr ?? ''),
+  );
+  s.hub.silent = false;
+  await s.wait(2 * MINUTE);
+  assert.match(s.gladys.fake.connectionStatus.message.fr, /NON appliqué/, 'stays over "connected"');
+  assert.ok(
+    s.gladys.fake.connectionStatuses
+      .slice(from)
+      .every((x) => /NON appliqué/.test(x.message?.fr ?? '')),
+    'no other status in between',
+  );
+  // A new away, confirmed: cleared.
+  assert.deepEqual(await s.cmd(ZF(1, 'mode'), 'away'), { success: true });
+  await s.wait(SECOND);
+  assert.equal(s.gladys.fake.connectionStatus.connected, true);
+});
+
+test('K3: the 6th send waiting for its answer is not given up before it', async (t) => {
+  const s = await setup();
+  t.after(() => s.app.shutdown());
+  s.hub.silent = true;
+  await s.cmd(ZF(1, 'mode'), 'away');
+  // Five sends without an answer, then the hub answers the sixth.
+  for (let i = 0; i < 120 && written(s, 'A03').length < 5; i += 1) await s.wait(SECOND);
+  assert.equal(written(s, 'A03').length, 5);
+  s.hub.silent = false;
+  await s.wait(MINUTE);
+  assert.equal(written(s, 'A03').length, 6);
+  assert.ok(!s.lines.some((l) => /given up/.test(l)), 'never told given up');
+  assert.equal(s.gladys.fake.connectionStatus.connected, true);
+  assert.equal(s.gladys.fake.lastState(ZF(1, 'mode')), 'away');
+});
+
+test('K1: an E00 about A03 while another mode command is in flight is not the away refusal', async (t) => {
+  const s = await setup({ config: ALLOW });
+  t.after(() => s.app.shutdown());
+  const sock = [...s.hub.open][0];
+  const handle = sock.handle.bind(sock);
+  sock.handle = (line) => {
+    if (line === 'A03 -1 1 3 -1 -1 1 2')
+      return s.clock.sleep(400).then(() => sock.send('E00 A03 Zone does not allow overrides'));
+    if (line === 'A03 -1 3 3 -1 -1 1 1') return s.clock.sleep(1000).then(() => handle(line));
+    return handle(line);
+  };
+  const other = s.gladys.fake.setValue({}, { external_id: ZF(2, 'mode') }, 'comfort');
+  await settle();
+  const away = s.gladys.fake.setValue({}, { external_id: ZF(1, 'mode') }, 'away');
+  const [a, b] = (await Promise.all([s.act(other), s.act(away)])).map((r) => r.value);
+  assert.match(a.error, /refusé/);
+  assert.notEqual(b.error ?? '', '', 'not taken as its own answer…');
+  assert.doesNotMatch(b.error, /refusé/);
+  await s.wait(MINUTE);
+  assert.equal(s.gladys.fake.lastState(ZF(1, 'mode')), 'away', '…and applied later');
+});
+
+test('m1: an invalid time zone: the away still leaves, then the session is closed and the status kept', async (t) => {
+  const s = await setup({ config: { ...CONFIG, timezone: 'Mars/Olympus' } });
+  t.after(() => s.app.shutdown());
+  assert.equal(s.hub.connections, 0);
+  await s.cmd(ZF(1, 'mode'), 'away');
+  await s.wait(5 * SECOND);
+  assert.equal(s.hub.open.size, 0, 'the session is closed');
+  assert.ok(written(s, 'A03').length >= 1);
+  assert.equal(s.hub.lines.filter((l) => l === 'G00').length, 0, 'no download, nothing else');
+  assert.notEqual(s.app.sessionState, 'ready');
+  assert.match(s.gladys.fake.connectionStatus.message.en, /time zone/);
+});
+
+test('#21: an away from /data (no order known) is not sent again over a B03 of the app', async (t) => {
+  const store = memoryStore({
+    pending: [{ hubKey: HUB_KEY, target: 1, targetId: 1, at: NOW - MINUTE, sends: 1 }],
+  });
+  const s = await setup({ store, start: false });
+  t.after(() => s.app.shutdown());
+  s.hub.silent = true;
+  await s.gladys.connect();
+  await s.wait(500);
+  assert.equal(written(s, 'A03').length, 1);
+  s.hub.push('B03 50 1 1 202611111300 -1 1 1');
+  await s.wait(MINUTE);
+  assert.equal(written(s, 'A03').length, 1);
+  assert.deepEqual(store.data.pending, []);
+});
+
+test('I3: an away clicked during a download takes no order from the partial model', async (t) => {
+  const world = defaultWorld();
+  world.overrides.push({ id: 4, mode: 1, type: 3, target: 1, targetId: 1 });
+  const s = await setup({ world, start: false });
+  t.after(() => s.app.shutdown());
+  const original = s.hub.createConnection;
+  s.app.createConnection = (o) => {
+    const sock = original(o);
+    const handle = sock.handle.bind(sock);
+    sock.handle = (line) => {
+      if (line !== 'G00') return handle(line);
+      sock.send('H00');
+      return s.clock.sleep(2000).then(() => handle(line));
+    };
+    return sock;
+  };
+  s.hub.silent = true;
+  await s.gladys.connect();
+  await s.wait(200);
+  assert.equal(s.app.sessionState, 'syncing');
+  const away = s.gladys.fake.setValue({}, { external_id: ZF(1, 'mode') }, 'away');
+  await s.act(away);
+  assert.equal(
+    s.store.data.pending.length,
+    1,
+    'the older override (id 4) listed later does not drop it',
+  );
+  s.hub.silent = false;
+  await s.wait(MINUTE);
+  assert.ok(written(s, 'A03').length >= 2);
+  assert.deepEqual(s.store.data.pending, []);
+});
+
+test('I4: an away from /data keeps its 10 s retry while sessions fail, whatever the backoff', async (t) => {
+  const store = memoryStore({
+    pending: [{ hubKey: HUB_KEY, target: 1, targetId: 1, at: NOW - MINUTE, sends: 1 }],
+  });
+  const s = await setup({ store, start: false });
+  t.after(() => s.app.shutdown());
+  let bad = 3;
+  s.app.createConnection = (o) => {
+    const sock = s.hub.createConnection(o);
+    const handle = sock.handle.bind(sock);
+    sock.handle = (line) =>
+      line === 'G00' && bad > 0 ? ((bad -= 1), sock.send(`H01 ${'x'.repeat(9000)}`)) : handle(line);
+    return sock;
+  };
+  await s.gladys.connect();
+  await s.wait(29 * SECOND);
+  assert.equal(written(s, 'A03').length, 1, `sessions: ${s.hub.connections}`);
+});

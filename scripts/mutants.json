@@ -110,8 +110,8 @@
   {
     "name": "pending away life not bounded",
     "file": "src/app.js",
-    "from": "now - p.at <= TIMINGS.protectiveLife &&",
-    "to": ""
+    "from": "const inTime = p.at <= now && now - p.at <= TIMINGS.protectiveLife;",
+    "to": "const inTime = p.at <= now;"
   },
   {
     "name": "future-dated pending away replayed",
@@ -260,7 +260,7 @@
   {
     "name": "I1: newer override of the app (by id) does not stop the away",
     "file": "src/app.js",
-    "from": "(p.afterId >= 0 && override.id > p.afterId)",
+    "from": "(p.afterId !== null && override.id > p.afterId)",
     "to": "false"
   },
   {
@@ -292,5 +292,77 @@
     "file": "src/app.js",
     "from": "    if (config.timezoneError) {",
     "to": "    if (false) {"
+  },
+  {
+    "name": "K1: ambiguous E00 taken as the away refusal",
+    "file": "src/app.js",
+    "from": "        if (ambiguous) return undefined;\n",
+    "to": ""
+  },
+  {
+    "name": "K2: away written twice in a session",
+    "file": "src/app.js",
+    "from": "if (!this.awaiting.has(entry)) this.writeAway(entry);",
+    "to": "this.writeAway(entry);"
+  },
+  {
+    "name": "K3: 6th send given up before its answer",
+    "file": "src/app.js",
+    "from": " || this.awaiting.has(p))",
+    "to": ")"
+  },
+  {
+    "name": "K5/I3: away without order (afterId null) dropped by any override",
+    "file": "src/app.js",
+    "from": "p.afterId !== null && ",
+    "to": ""
+  },
+  {
+    "name": "I3: afterId taken from a partial model",
+    "file": "src/app.js",
+    "from": "this.sessionState === 'ready' && this.model\n",
+    "to": "this.model\n"
+  },
+  {
+    "name": "I3: afterId -1 never taken",
+    "file": "src/app.js",
+    "from": "? Math.max(-1, ...this.model.overrides.keys())\n          : null,",
+    "to": "? Math.max(0, ...this.model.overrides.keys())\n          : null,"
+  },
+  {
+    "name": "I4: no early send when the download hangs",
+    "file": "src/app.js",
+    "from": "if (session === this.session && this.sessionState === 'syncing') this.sendPending();",
+    "to": ""
+  },
+  {
+    "name": "I4: no retry armed when a session closes",
+    "file": "src/app.js",
+    "from": "    // Away commands still waiting keep their own retry, whatever closed the session.\n    this.armRetry();\n",
+    "to": ""
+  },
+  {
+    "name": "I5: give-up not told",
+    "file": "src/app.js",
+    "from": "    for (const p of given) this.awayGivenUp(p);\n",
+    "to": ""
+  },
+  {
+    "name": "I5: give-up status overwritten",
+    "file": "src/app.js",
+    "from": "    if (this.awayFailure && message !== this.awayFailure) {",
+    "to": "    if (false) {"
+  },
+  {
+    "name": "m1: session kept on an invalid time zone",
+    "file": "src/app.js",
+    "from": "      if (session === this.session) session.close('timezone');",
+    "to": "      return;"
+  },
+  {
+    "name": "m2: discovery per line",
+    "file": "src/app.js",
+    "from": "        }, TIMINGS.discoveryDebounce);",
+    "to": "        }, 0);"
   }
 ]

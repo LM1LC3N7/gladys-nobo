@@ -100,6 +100,8 @@ export class NoboApp {
     this.busy = undefined;
     this.busyKind = undefined;
     this.awaiting = new Set();
+    this.awayFailure = undefined;
+    this.discoveryTimer = undefined;
     this.memory = normalizeMemory(null, now());
     this.memoryLoaded = false;
     this.memoryLoading = undefined;
@@ -353,14 +355,37 @@ export class NoboApp {
       this.memory.refusal = null;
       this.saveMemory();
     }
+    if (this.config.timezoneError) {
+      // Reached only for an away command (connectSoon): it leaves, then the session is closed,
+      // the wrong time zone told; nothing else runs on a session opened with a guessed time.
+      this.sendPending();
+      let timer;
+      await new Promise((resolve) => {
+        timer = this.timers.setTimeout(resolve, TIMINGS.commandAnswerBy);
+      });
+      this.timers.clearTimeout(timer);
+      if (session === this.session) session.close('timezone');
+      await this.setStatus(false, STATUS.timezoneInvalid);
+      return;
+    }
+    // Away commands waiting leave after the download (it tells whether each one is applied
+    // already, or replaced by a newer choice made in the app), but never later than 3 s: the
+    // protective command never waits on a download that does not end.
+    const early = this.timers.setTimeout(() => {
+      if (session === this.session && this.sessionState === 'syncing') this.sendPending();
+    }, TIMINGS.protectiveSyncWait);
     try {
       await session.sync();
     } catch (err) {
+      this.timers.clearTimeout(early);
       if (gen !== this.generation || session !== this.session) return;
       this.logger.warn(`Download from the hub failed: ${err.reason ?? err.message}`);
+      // The download failed: the away commands waiting leave anyway, before the close.
+      this.sendPending();
       session.close('sync-failed');
       return;
     }
+    this.timers.clearTimeout(early);
     if (gen !== this.generation || session !== this.session) return;
     this.sessionState = 'ready';
     session.watchIdle();
@@ -388,6 +413,9 @@ export class NoboApp {
     this.busyDone();
     if (gen !== this.generation || this.stopped) return;
     this.logger.warn(`Session with the hub closed: ${reason}`);
+    // Away commands still waiting keep their own retry, whatever closed the session.
+    this.armRetry();
+    if (reason === 'timezone') return;
     if (reason === 'no-answer') {
       // Closed by us after an away command without an answer: not a failure, a new session at once.
       this.scheduleConnect(TIMINGS.reconnect[0]);
@@ -406,7 +434,11 @@ export class NoboApp {
     const changed = this.model.apply(msg);
     if (changed && this.sessionState === 'ready') {
       if (msg.kind === 'zone' || msg.kind === 'zone-removed' || msg.kind === 'hub') {
-        this.publishDiscovery().catch(() => {});
+        // Once per burst (a G00 asked again lists every zone): published 1 s after the last change.
+        this.timers.clearTimeout(this.discoveryTimer);
+        this.discoveryTimer = this.timers.setTimeout(() => {
+          this.publishDiscovery().catch(() => {});
+        }, TIMINGS.discoveryDebounce);
       }
       this.publishAll();
     }
@@ -429,17 +461,18 @@ export class NoboApp {
           p.targetId === override.targetId &&
           (override.mode === OVERRIDE_MODE.AWAY ||
             cmd === 'B03' ||
-            (p.afterId >= 0 && override.id > p.afterId))
+            (p.afterId !== null && override.id > p.afterId))
         ),
     );
     if (this.memory.pending.length !== before) this.saveMemory();
+    if (override.mode === OVERRIDE_MODE.AWAY && cmd === 'B03') this.awayApplied();
   }
 
   async shutdown() {
     this.stopped = true;
     this.restart();
     this.publisher.stop();
-    for (const t of [this.configTimer, this.retryTimer, this.storeTimer])
+    for (const t of [this.configTimer, this.retryTimer, this.storeTimer, this.discoveryTimer])
       this.timers.clearTimeout(t);
     for (const item of this.queue.splice(0))
       item.reject(new CommandError(COMMAND.notReady, this.language));
@@ -565,7 +598,9 @@ export class NoboApp {
   }
 
   async refreshStatus() {
-    if (this.sessionState === 'ready') {
+    if (this.awayFailure) {
+      await this.setStatus(false, this.awayFailure);
+    } else if (this.sessionState === 'ready') {
       await this.setStatus(true, STATUS.connected(this.model.zones.size));
     } else if (this.lastStatus) {
       this.statusKey = undefined;
@@ -575,7 +610,12 @@ export class NoboApp {
 
   /** One setConnectionStatus per state. */
   async setStatus(connected, message) {
-    this.lastStatus = message;
+    // A given-up away command stays the status until a confirmed away or a click.
+    if (this.awayFailure && message !== this.awayFailure) {
+      this.lastStatus = message;
+      return;
+    }
+    if (message !== this.awayFailure) this.lastStatus = message;
     const key = JSON.stringify([connected, message]);
     if (key === this.statusKey) return;
     this.statusKey = key;
@@ -591,6 +631,11 @@ export class NoboApp {
 
   async setValue(_device, feature, value) {
     const language = this.language;
+    // A click is the user's answer to a given-up away command: its status is cleared.
+    if (this.awayFailure) {
+      this.awayFailure = undefined;
+      this.refreshStatus().catch(() => {});
+    }
     const ref = parseExternalId(feature?.external_id);
     if (!ref || !ref.role) throw new CommandError(COMMAND.badValue, language);
     if (ref.role === F.MODE) {
@@ -757,7 +802,12 @@ export class NoboApp {
       targetId: ref.targetId,
       at: this.now(),
       sends: 0,
-      afterId: this.model ? Math.max(-1, ...this.model.overrides.keys()) : -1,
+      // The newest override id the hub had assigned when the away was made: only known from a
+      // complete download (-1: none at all); null otherwise (then no order can be told).
+      afterId:
+        this.sessionState === 'ready' && this.model
+          ? Math.max(-1, ...this.model.overrides.keys())
+          : null,
     };
     this.memory.pending = this.memory.pending
       .filter((p) => !sameTarget(p, entry))
@@ -828,7 +878,10 @@ export class NoboApp {
     this.saveMemory();
     return reply.then((m) => {
       this.awaiting.delete(entry);
-      if (m?.kind === 'override') return 'ok';
+      if (m?.kind === 'override') {
+        this.awayApplied();
+        return 'ok';
+      }
       if (m?.kind === 'error') {
         if (ambiguous) return undefined;
         // Refused by the hub: sending it again changes nothing.
@@ -857,14 +910,36 @@ export class NoboApp {
    */
   prunePending() {
     const now = this.now();
-    const before = this.memory.pending.length;
-    this.memory.pending = this.memory.pending.filter(
-      (p) =>
-        p.at <= now &&
-        now - p.at <= TIMINGS.protectiveLife &&
-        (p.sends < TIMINGS.protectiveSends || this.awaiting.has(p)),
+    const kept = [];
+    const given = [];
+    for (const p of this.memory.pending) {
+      const inTime = p.at <= now && now - p.at <= TIMINGS.protectiveLife;
+      if (inTime && (p.sends < TIMINGS.protectiveSends || this.awaiting.has(p))) kept.push(p);
+      // Dated in the future: not ours, dropped quietly; else given up: told.
+      else if (p.at <= now) given.push(p);
+    }
+    if (kept.length === this.memory.pending.length) return;
+    this.memory.pending = kept;
+    this.saveMemory();
+    for (const p of given) this.awayGivenUp(p);
+  }
+
+  /** An away command never shown by the hub: a warning, and a status that stays until cleared. */
+  awayGivenUp(p) {
+    const what = p.target === OVERRIDE_TARGET.HUB ? 'the whole house' : `zone ${p.targetId}`;
+    this.logger.warn(
+      `Away mode of ${what} not applied by the hub after ${p.sends} send(s): given up`,
     );
-    if (before !== this.memory.pending.length) this.saveMemory();
+    this.awayFailure = STATUS.awayNotApplied(p.target === OVERRIDE_TARGET.HUB ? null : p.targetId);
+    this.statusKey = undefined;
+    this.setStatus(false, this.awayFailure).catch(() => {});
+  }
+
+  /** An away command shown by the hub: a former give-up is no longer the news. */
+  awayApplied() {
+    if (!this.awayFailure) return;
+    this.awayFailure = undefined;
+    this.refreshStatus().catch(() => {});
   }
 
   armRetry() {

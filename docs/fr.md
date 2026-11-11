@@ -72,7 +72,8 @@ passe devant les commandes en attente, et celles de sa cible (toutes, pour
 toute la maison) sont abandonnées. Tant que le hub ne le montre pas appliqué,
 il est gardé dans `/data` et réécrit : si le hub ne répond pas en 3,5 s, la
 connexion est jugée figée, fermée, et le mode absent écrit sur la suivante,
-juste après son téléchargement (6 fois au plus en 15 minutes). Après un
+après son téléchargement, ou 3 s au plus après la poignée de main si le
+téléchargement ne se termine pas (6 fois au plus en 15 minutes). Après un
 redémarrage, il part dès que Gladys a redonné la configuration (le hub demande
 le numéro de série, jamais écrit dans `/data`). Il n'est plus renvoyé dès
 qu'un mode plus récent de la même cible est parti de Gladys, ou dès que le hub
@@ -85,7 +86,9 @@ zones une par une.
 
 Il peut quand même échouer, et Gladys le dit : quand le hub le refuse (une
 réponse `E00`, son message affiché), ou quand le hub ne le montre pas en
-15 minutes ou 6 envois.
+15 minutes ou 6 envois : un avertissement est alors journalisé et l'état
+nomme la zone (ou toute la maison), jusqu'à un mode absent confirmé ou une
+autre commande cliquée.
 
 Un hub qui n'envoie rien pendant 75 s est interrogé de nouveau ; sans réponse
 en 20 s, la connexion est fermée puis rouverte.

@@ -259,7 +259,7 @@ test('/data read back: bounded, repaired, future dates dropped', () => {
   assert.match(m.salt, /^[0-9a-f]{32}$/);
   assert.equal(m.refusal, null);
   assert.deepEqual(m.pending, [
-    { hubKey: '102000000', target: 1, targetId: 3, at: now - 1000, sends: 6, afterId: -1 },
+    { hubKey: '102000000', target: 1, targetId: 3, at: now - 1000, sends: 6, afterId: null },
   ]);
   assert.equal(m.lastAttemptAt, null);
 });

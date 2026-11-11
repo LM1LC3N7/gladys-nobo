@@ -90,7 +90,7 @@ function pendingOf(raw, now) {
     ? Math.max(0, Math.min(raw.sends, TIMINGS.protectiveSends))
     : 0;
   const afterId =
-    Number.isInteger(raw.afterId) && raw.afterId >= -1 && raw.afterId < 1e9 ? raw.afterId : -1;
+    Number.isInteger(raw.afterId) && raw.afterId >= -1 && raw.afterId < 1e9 ? raw.afterId : null;
   return { hubKey: raw.hubKey, target, targetId, at: raw.at, sends, afterId };
 }
 

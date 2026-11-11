@@ -69,7 +69,8 @@ before the commands waiting, and those of its target (all of them, for the
 whole house) are dropped. Until the hub shows it applied, it is kept in
 `/data` and written again: when the hub does not answer within 3.5 s, the
 connection is taken as frozen, closed, and the away mode written on the next
-one, right after its download (6 times at most within 15 minutes). After a
+one, after its download, or 3 s at most after the handshake if the download
+does not end (6 times at most within 15 minutes). After a
 restart, it leaves once Gladys has given the configuration back (the hub asks
 for the serial number, which is never written to `/data`). It is not sent
 again once a newer mode of the same target has left from Gladys, or once the
@@ -81,7 +82,9 @@ overrides (a setting of the zone in the Nobø app): set those zones one by one.
 
 It can still fail, and Gladys says so: when the hub refuses it (an `E00`
 answer, its message shown), or when the hub does not show it within 15
-minutes or 6 sends.
+minutes or 6 sends: then a warning is logged and the status names the zone
+(or the whole house), until an away mode is confirmed or another command is
+clicked.
 
 A hub that sends nothing for 75 s is asked for its data again; without an
 answer within 20 s the connection is closed and opened again.

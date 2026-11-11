@@ -99,6 +99,10 @@ export async function setup({
     await gladys.connect();
     await wait(0);
     await wait(100);
+    // A loaded machine settles promises more slowly: the first session gets a few more turns.
+    for (let i = 0; i < 10 && ['connecting', 'syncing'].includes(app.sessionState); i += 1) {
+      await settle(100);
+    }
   }
   return { app, gladys, clock, store, hub, wait, act, cmd, lines, advance };
 }
