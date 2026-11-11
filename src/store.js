@@ -2,7 +2,8 @@
 // What must survive a restart, in /data (the only writable place of the
 // container), bounded and repaired when read back:
 //   - the away commands not yet confirmed by the hub (sent again after a
-//     restart, until their deadline, 3 times at most);
+//     restart, until the hub shows them or a newer choice replaces them,
+//     6 sends and 15 min at most);
 //   - the mark of a serial number the hub refused (8 bits of a salted hash,
 //     never the serial), so a refused serial is not sent again by itself;
 //   - the time of the last connection attempt (a restart never connects sooner
@@ -88,7 +89,9 @@ function pendingOf(raw, now) {
   const sends = Number.isInteger(raw.sends)
     ? Math.max(0, Math.min(raw.sends, TIMINGS.protectiveSends))
     : 0;
-  return { hubKey: raw.hubKey, target, targetId, at: raw.at, sends };
+  const afterId =
+    Number.isInteger(raw.afterId) && raw.afterId >= -1 && raw.afterId < 1e9 ? raw.afterId : -1;
+  return { hubKey: raw.hubKey, target, targetId, at: raw.at, sends, afterId };
 }
 
 export function normalizeMemory(raw, now = Date.now()) {

@@ -199,7 +199,13 @@ export function zoneStates(model, zone, local, stamp) {
   const states = [];
   const temperature = model.zoneTemperature(zone.id);
   if (temperature !== undefined) states.push([F.TEMPERATURE, { state: temperature }]);
-  states.push([F.COMFORT, { state: zone.comfort }], [F.ECO, { state: zone.eco }]);
+  // A temperature of the hub outside 7–30 °C is not published as a setpoint.
+  for (const [role, value] of [
+    [F.COMFORT, zone.comfort],
+    [F.ECO, zone.eco],
+  ]) {
+    if (value >= SETPOINT.min && value <= SETPOINT.max) states.push([role, { state: value }]);
+  }
   const standing = model.standingMode(OVERRIDE_TARGET.ZONE, zone.id);
   if (standing !== undefined) states.push([F.MODE, { text: standing }]);
   const active = model.activeMode(zone.id, local, stamp);

@@ -54,13 +54,22 @@ Handoff document: what is done, what was decided, what comes next.
   a missing session; before the queue; drops the queued commands of its
   target. Written as a constant override. Eco and comfort, back to the
   schedule, and the temperatures are sensitive (off by default).
+- **Review r1 fixes** (2026-11-11): both temperatures of U00 bounded (the
+  one taken back from the hub too), out-of-range ones not published; dated
+  overrides read (12-digit times, unreadable = unknown); a frozen session cut
+  (an away without an answer closes it, 75 s of silence asks G00 again, 20 s
+  without its end closes it); the away leaves /data only when the hub shows
+  it, a newer choice replaces it, the hub refuses it for sure, or after 6
+  unanswered sends (one per session) / 15 min; it is written after the G00 of
+  a new session, so a newer choice made in the app (override id above the one
+  known when the away was made) is never overwritten; a temperature no
+  longer stops its resend; an invalid time zone is a status, not Oslo.
 - **Away after a restart needs the configuration**: the pending away commands
   are read from /data at start, but the handshake needs the serial, which is
   never written to /data: they leave at the first session once Gladys gave the
   configuration (retried 5 s, 15 s, 1 min, then every 5 min).
-- **Mutants**: `scripts/mutants.json` (37, run by `memcap node scripts/mutants.mjs`),
-  all killed but one marked equivalent (the early "no session" check of
-  `enqueue`, repeated by `pump` before the first byte with the same refusal).
+- **Mutants**: `scripts/mutants.json` (49, run by `memcap node scripts/mutants.mjs`),
+  all killed (the early "no session" check of `enqueue` by a white-box test).
 - **Fresh state**: commands are decided on the live session state (the hub
   pushes every change); without a session whose G00 download ended, a
   non-protective command is refused ("nothing sent").

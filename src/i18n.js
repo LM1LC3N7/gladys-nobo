@@ -52,6 +52,10 @@ export const STATUS = {
     'The serial number must have 12 digits.',
     'Le numéro de série doit avoir 12 chiffres.',
   ),
+  timezoneInvalid: both(
+    'The time zone is not a known IANA name (e.g. Europe/Oslo, Europe/Paris): fix it.',
+    'Le fuseau horaire n’est pas un nom IANA connu (ex. Europe/Oslo, Europe/Paris) : corrigez-le.',
+  ),
   hostInvalid: both(
     'The address is not a unicast IP address of your network: fix it or leave it empty.',
     'L’adresse n’est pas une adresse IP de votre réseau : corrigez-la ou laissez-la vide.',
@@ -136,9 +140,18 @@ export const COMMAND = {
     'Envoyée, sans confirmation du hub pour l’instant.',
   ),
   awayPending: both(
-    'Away mode kept: it is sent as soon as the hub answers (again 3 times at most within 15 min).',
-    'Mode absent retenu : il part dès que le hub répond (de nouveau 3 fois au plus en 15 min).',
+    'Away mode kept: it is sent as soon as the hub answers (6 times at most within 15 min).',
+    'Mode absent retenu : il part dès que le hub répond (6 fois au plus en 15 min).',
   ),
+  awaySent: both(
+    'Away mode sent, without confirmation yet: sent again on a new connection until the hub shows it (6 times at most within 15 min).',
+    'Mode absent envoyé, sans confirmation pour l’instant : renvoyé sur une nouvelle connexion jusqu’à ce que le hub le montre (6 fois au plus en 15 min).',
+  ),
+  otherOutOfRange: (min, max) =>
+    both(
+      `Nothing sent: the other temperature of the zone, read from the hub, is not a whole number from ${min} to ${max} °C; set it first.`,
+      `Rien envoyé : l’autre température de la zone, lue sur le hub, n’est pas un nombre entier de ${min} à ${max} °C ; réglez-la d’abord.`,
+    ),
 };
 
 export const TEST = {

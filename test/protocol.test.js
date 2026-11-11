@@ -55,6 +55,25 @@ test('the examples of the document are read', () => {
   assert.equal(parseLine('Y09 whatever').kind, 'unknown');
 });
 
+test('dated overrides (12-digit times) are read; an unreadable time is unknown, the line kept', () => {
+  assert.deepEqual(parseLine('H04 5 1 2 202611111800 202611111600 1 1').override, {
+    id: 5,
+    mode: 1,
+    type: 2,
+    end: '202611111800',
+    start: '202611111600',
+    target: 1,
+    targetId: 1,
+  });
+  const timer = parseLine('B03 9 1 1 202611111800 -1 1 1').override;
+  assert.equal(timer.end, '202611111800');
+  assert.equal(timer.start, -1);
+  const odd = parseLine('H04 6 1 2 soon later 1 1').override;
+  assert.equal(odd.start, null);
+  assert.equal(overrideLive(odd, '20261111120000'), undefined);
+  assert.equal(parseLine('H04 x 1 2 -1 -1 1 1'), undefined);
+});
+
 test('a known command with unreadable fields changes nothing', () => {
   assert.equal(
     parseLine('H01 2 ZoneName 1 23.5 15 0 -1'),
@@ -228,6 +247,8 @@ test('/data read back: bounded, repaired, future dates dropped', () => {
         { hubKey: '102000000', target: 1, targetId: 3, at: now - 1000, sends: 9 },
         { hubKey: '102000000', target: 0, targetId: -1, at: now + 1000 },
         { hubKey: '102000000', target: 0, targetId: 4, at: now },
+        { hubKey: '102000000', target: 1, targetId: 2e6, at: now },
+        { hubKey: '102000000', target: 1, targetId: 1.5, at: now },
         { hubKey: '1020', target: 1, targetId: 3, at: now },
         { hubKey: '102000000', target: 1, targetId: 3, at: now - 3_600_000 },
       ],
@@ -238,7 +259,7 @@ test('/data read back: bounded, repaired, future dates dropped', () => {
   assert.match(m.salt, /^[0-9a-f]{32}$/);
   assert.equal(m.refusal, null);
   assert.deepEqual(m.pending, [
-    { hubKey: '102000000', target: 1, targetId: 3, at: now - 1000, sends: 3 },
+    { hubKey: '102000000', target: 1, targetId: 3, at: now - 1000, sends: 6, afterId: -1 },
   ]);
   assert.equal(m.lastAttemptAt, null);
 });

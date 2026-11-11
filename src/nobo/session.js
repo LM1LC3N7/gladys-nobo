@@ -34,6 +34,8 @@ export class HubSession extends EventEmitter {
     this.buffer = Buffer.alloc(0);
     this.waiters = new Set();
     this.lastWrite = 0;
+    this.lastRead = 0;
+    this.idleTimer = undefined;
     this.keepaliveTimer = undefined;
     this.ready = false;
   }
@@ -152,6 +154,7 @@ export class HubSession extends EventEmitter {
   }
 
   onLine(line) {
+    this.lastRead = this.monotonic();
     if (Buffer.byteLength(line) > LIMITS.lineBytes) {
       this.close('line-too-long');
       return;
@@ -180,11 +183,38 @@ export class HubSession extends EventEmitter {
     this.keepaliveTimer = this.timers.setTimeout(tick, TIMINGS.keepalive);
   }
 
+  /**
+   * A hub that sends nothing for 75 s is asked for everything again (G00; the
+   * document gives no other request that is always answered): without its end
+   * (H05) within 20 s, the session is frozen and closed.
+   */
+  watchIdle() {
+    this.lastRead = this.monotonic();
+    const tick = async () => {
+      if (this.closed) return;
+      const now = this.monotonic();
+      const due = this.lastRead + TIMINGS.idleTimeout;
+      if (now < due) {
+        this.idleTimer = this.timers.setTimeout(tick, due - now);
+        return;
+      }
+      const end = this.next((m) => m.kind === 'hub' && m.cmd === 'H05', TIMINGS.syncTimeout);
+      this.write('G00');
+      if (!(await end)) {
+        this.close('frozen');
+        return;
+      }
+      if (!this.closed) this.idleTimer = this.timers.setTimeout(tick, TIMINGS.idleTimeout);
+    };
+    this.idleTimer = this.timers.setTimeout(tick, TIMINGS.idleTimeout);
+  }
+
   close(reason = 'closed') {
     if (this.closed) return;
     this.closed = true;
     this.ready = false;
     this.timers.clearTimeout(this.keepaliveTimer);
+    this.timers.clearTimeout(this.idleTimer);
     for (const waiter of [...this.waiters]) waiter.resolve(undefined);
     try {
       this.socket?.destroy();

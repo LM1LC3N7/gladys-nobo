@@ -63,9 +63,7 @@
     "name": "command without a downloaded session",
     "file": "src/app.js",
     "from": "    if (this.sessionState !== 'ready')\n      return Promise.reject(new CommandError(COMMAND.notReady, language));",
-    "to": "",
-    "equivalent": true,
-    "why": "pump() checks the same state before the first byte and gives the same refusal at once; the early check only avoids queueing"
+    "to": ""
   },
   {
     "name": "away gated by the modes option",
@@ -98,10 +96,10 @@
     "to": ""
   },
   {
-    "name": "pending away not sent after the handshake",
+    "name": "pending away not sent after the download",
     "file": "src/app.js",
-    "from": "    // Away commands waiting: written right after the handshake, before anything else.\n    this.sendPending();",
-    "to": ""
+    "from": "    this.sendPending();\n    this.timers.clearInterval(this.evalTimer);",
+    "to": "    this.timers.clearInterval(this.evalTimer);"
   },
   {
     "name": "pending away sends not bounded",
@@ -124,14 +122,14 @@
   {
     "name": "newer command does not cancel the away resend",
     "file": "src/app.js",
-    "from": "    this.memory.pending = this.memory.pending.filter((p) => !sameTarget(p, ref));\n    if (before !== this.memory.pending.length) this.saveMemory();",
-    "to": ""
+    "from": "    if (item.kind === 'mode') {\n      const before",
+    "to": "    if (false) {\n      const before"
   },
   {
     "name": "B03 of another mode does not stop the resend",
     "file": "src/app.js",
-    "from": "(override.mode === OVERRIDE_MODE.AWAY || cmd === 'B03')",
-    "to": "override.mode === OVERRIDE_MODE.AWAY"
+    "from": "            cmd === 'B03' ||\n",
+    "to": ""
   },
   {
     "name": "refused serial tried again",
@@ -222,5 +220,77 @@
     "file": "src/app.js",
     "from": "this.logger.warn('The hub refused the serial number');",
     "to": "this.logger.warn(`The hub refused ${config.serialNumber}`);"
+  },
+  {
+    "name": "B1: value taken back from the hub not bounded",
+    "file": "src/app.js",
+    "from": "if (!Number.isInteger(value) || value < SETPOINT.min || value > SETPOINT.max) {\n          return fail(COMMAND.otherOutOfRange",
+    "to": "if (false) {\n          return fail(COMMAND.otherOutOfRange"
+  },
+  {
+    "name": "B1: out-of-range setpoint published",
+    "file": "src/devices.js",
+    "from": "if (value >= SETPOINT.min && value <= SETPOINT.max) states.push",
+    "to": "states.push"
+  },
+  {
+    "name": "B2: unanswered away does not close the session",
+    "file": "src/app.js",
+    "from": "if (session === this.session && !session.closed) session.close('no-answer');",
+    "to": ""
+  },
+  {
+    "name": "B2: idle probe never armed",
+    "file": "src/app.js",
+    "from": "    session.watchIdle();\n",
+    "to": ""
+  },
+  {
+    "name": "B2: unanswered away reconnect counted as a failure",
+    "file": "src/app.js",
+    "from": "    if (reason === 'no-answer') {",
+    "to": "    if (false) {"
+  },
+  {
+    "name": "I1: dated override rejected",
+    "file": "src/nobo/protocol.js",
+    "from": "return typeof text === 'string' && /^\\d{12}$/.test(text) ? text : null;",
+    "to": "return undefined;"
+  },
+  {
+    "name": "I1: newer override of the app (by id) does not stop the away",
+    "file": "src/app.js",
+    "from": "(p.afterId >= 0 && override.id > p.afterId)",
+    "to": "false"
+  },
+  {
+    "name": "I2 (alt): setpoint cancels the away resend",
+    "file": "src/app.js",
+    "from": "    if (item.kind === 'mode') {\n      const before",
+    "to": "    if (true) {\n      const before"
+  },
+  {
+    "name": "R1: G00 message count not bounded",
+    "file": "src/nobo/session.js",
+    "from": "if (count > LIMITS.syncMessages) this.close('too-long');",
+    "to": ""
+  },
+  {
+    "name": "R4: hub error message not cut",
+    "file": "src/app.js",
+    "from": "[...clean].slice(0, LIMITS.errorLength).join('')",
+    "to": "clean"
+  },
+  {
+    "name": "R7: targetId of /data not checked",
+    "file": "src/store.js",
+    "from": "if (!Number.isInteger(targetId) || targetId < -1 || targetId > 1e6) return undefined;",
+    "to": ""
+  },
+  {
+    "name": "M3: invalid time zone replaced silently",
+    "file": "src/app.js",
+    "from": "    if (config.timezoneError) {",
+    "to": "    if (false) {"
   }
 ]

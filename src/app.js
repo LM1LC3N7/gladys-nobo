@@ -18,7 +18,11 @@
 // protective command: never refused by an option, a missing session, a full
 // queue nor a pause; written before the waiting commands (those of its target
 // are dropped, nothing queued before it leaves after it), kept in /data until
-// the hub confirms it (B03), written again 3 times at most within 15 min.
+// the hub shows it (B03, or the download of a later session) or a newer
+// choice replaces it; without an answer the session is taken as frozen,
+// closed, and the command written again on the next one (6 times, 15 min at
+// most). A hub silent for 75 s is asked for everything again (G00); no end
+// within 20 s = frozen, closed.
 // -----------------------------------------------------------------------------
 
 import { normalizeConfig, isComplete, serialMark, unicastAddress } from './config.js';
@@ -94,6 +98,8 @@ export class NoboApp {
     this.storeTimer = undefined;
     this.queue = [];
     this.busy = undefined;
+    this.busyKind = undefined;
+    this.awaiting = new Set();
     this.memory = normalizeMemory(null, now());
     this.memoryLoaded = false;
     this.memoryLoading = undefined;
@@ -191,6 +197,11 @@ export class NoboApp {
     }
     if (config.hostError) {
       await this.setStatus(false, STATUS.hostInvalid);
+      return;
+    }
+    if (config.timezoneError) {
+      // The local time is sent to the hub: a wrong zone would shift its programmes.
+      await this.setStatus(false, STATUS.timezoneInvalid);
       return;
     }
     if (this.isRefused()) {
@@ -342,8 +353,6 @@ export class NoboApp {
       this.memory.refusal = null;
       this.saveMemory();
     }
-    // Away commands waiting: written right after the handshake, before anything else.
-    this.sendPending();
     try {
       await session.sync();
     } catch (err) {
@@ -354,6 +363,10 @@ export class NoboApp {
     }
     if (gen !== this.generation || session !== this.session) return;
     this.sessionState = 'ready';
+    session.watchIdle();
+    // Away commands waiting: written right after the download, which told whether each one is
+    // applied already (dropped) or replaced by a newer choice made in the app (dropped).
+    this.sendPending();
     this.timers.clearInterval(this.evalTimer);
     this.evalTimer = this.timers.setInterval(() => this.publishAll(), TIMINGS.evaluate);
     this.logger.info(
@@ -375,6 +388,14 @@ export class NoboApp {
     this.busyDone();
     if (gen !== this.generation || this.stopped) return;
     this.logger.warn(`Session with the hub closed: ${reason}`);
+    if (reason === 'no-answer') {
+      // Closed by us after an away command without an answer: not a failure, a new session at once.
+      this.scheduleConnect(TIMINGS.reconnect[0]);
+      this.setStatus(false, STATUS.unreachable(Math.round(TIMINGS.reconnect[0] / 1000))).catch(
+        () => {},
+      );
+      return;
+    }
     if (this.monotonic() - this.openedAt >= TIMINGS.stableAfter) this.backoff = 0;
     this.failed(gen, (wait) => STATUS.unreachable(wait));
   }
@@ -393,8 +414,9 @@ export class NoboApp {
 
   /**
    * An override seen: one in away mode on a target confirms its pending away
-   * command; a new one (B03) in another mode is a newer command (the app, a
-   * switch, another client): the away command is not sent again over it.
+   * command; a new one in another mode (pushed as B03, or listed with an id
+   * the hub assigned after the away command was made) is a newer choice (the
+   * app, a switch, another client): the away command is not sent again over it.
    */
   overrideSeen({ cmd, override }) {
     const hubKey = this.config?.hubKey;
@@ -405,7 +427,9 @@ export class NoboApp {
           p.hubKey === hubKey &&
           p.target === override.target &&
           p.targetId === override.targetId &&
-          (override.mode === OVERRIDE_MODE.AWAY || cmd === 'B03')
+          (override.mode === OVERRIDE_MODE.AWAY ||
+            cmd === 'B03' ||
+            (p.afterId >= 0 && override.id > p.afterId))
         ),
     );
     if (this.memory.pending.length !== before) this.saveMemory();
@@ -652,6 +676,12 @@ export class NoboApp {
         comfort: item.role === F.COMFORT ? item.value : zone.comfort,
         eco: item.role === F.ECO ? item.value : zone.eco,
       };
+      // Both values written are bounded, the one taken back from the hub too.
+      for (const value of [wanted.comfort, wanted.eco]) {
+        if (!Number.isInteger(value) || value < SETPOINT.min || value > SETPOINT.max) {
+          return fail(COMMAND.otherOutOfRange(SETPOINT.min, SETPOINT.max));
+        }
+      }
       if (wanted.comfort < wanted.eco) return fail(COMMAND.comfortBelowEco);
       line = updateZone(zone, wanted);
       match = (m) =>
@@ -675,10 +705,14 @@ export class NoboApp {
       return Boolean(verdict);
     }, item.answerBy - at);
     if (!session.write(line)) return fail(COMMAND.notReady);
-    // A newer command of this target has left: an away command pending on it is not sent again.
-    const before = this.memory.pending.length;
-    this.memory.pending = this.memory.pending.filter((p) => !sameTarget(p, ref));
-    if (before !== this.memory.pending.length) this.saveMemory();
+    // A newer mode of this target has left: an away command pending on it is not sent again
+    // (a temperature does not change the mode: it leaves the away command alone).
+    if (item.kind === 'mode') {
+      const before = this.memory.pending.length;
+      this.memory.pending = this.memory.pending.filter((p) => !sameTarget(p, ref));
+      if (before !== this.memory.pending.length) this.saveMemory();
+    }
+    this.busyKind = item.kind;
     let release;
     this.busy = new Promise((resolve) => {
       release = resolve;
@@ -723,6 +757,7 @@ export class NoboApp {
       targetId: ref.targetId,
       at: this.now(),
       sends: 0,
+      afterId: this.model ? Math.max(-1, ...this.model.overrides.keys()) : -1,
     };
     this.memory.pending = this.memory.pending
       .filter((p) => !sameTarget(p, entry))
@@ -744,35 +779,31 @@ export class NoboApp {
       ]);
       this.timers.clearTimeout(timer);
     }
-    const reply = this.session?.next(
-      (m) =>
-        (m.kind === 'override' &&
-          m.cmd === 'B03' &&
-          m.override.target === ref.target &&
-          m.override.targetId === ref.targetId &&
-          m.override.mode === OVERRIDE_MODE.AWAY) ||
-        (m.kind === 'error' && m.about === 'A03'),
-      TIMINGS.commandAnswerBy - TIMINGS.protectiveWait,
-    );
-    if (!this.writeAway(entry)) {
+    // An E00 about A03 is this command's only when no other mode command is in flight.
+    const ambiguous = Boolean(this.busy) && this.busyKind === 'mode';
+    const reply = this.writeAway(entry, { ambiguous });
+    if (!reply) {
       this.connectSoon();
       this.armRetry();
       throw new CommandError(COMMAND.awayPending, language);
     }
     this.armRetry();
     const answer = await reply;
-    if (answer?.kind === 'override') return undefined;
-    if (answer?.kind === 'error') {
-      // Refused by the hub (a zone that does not allow overrides…): sending it again changes nothing.
-      this.memory.pending = this.memory.pending.filter((p) => p !== entry);
-      this.saveMemory();
-      throw new CommandError(COMMAND.refused(cleanError(answer.message)), language);
+    if (answer === 'ok') return undefined;
+    if (answer?.refused !== undefined) {
+      throw new CommandError(COMMAND.refused(cleanError(answer.refused)), language);
     }
-    throw new CommandError(COMMAND.awayPending, language);
+    throw new CommandError(COMMAND.awaySent, language);
   }
 
-  /** Writes one away command on the live session; false when it cannot leave now. */
-  writeAway(entry) {
+  /**
+   * Writes one away command on the live session; false when it cannot leave
+   * now, else the promise of its answer: 'ok' (B03 in away mode on its target),
+   * `{ refused }` (E00, its own for sure), or undefined. Without any answer in
+   * time, the session is taken as frozen: closed, and a new one opened (the
+   * command stays in /data and is written again there).
+   */
+  writeAway(entry, { ambiguous = true } = {}) {
     const session = this.session;
     if (!session?.ready || entry.hubKey !== this.config?.hubKey) return false;
     const line = addOverride({
@@ -781,26 +812,57 @@ export class NoboApp {
       target: entry.target,
       targetId: entry.targetId,
     });
+    const reply = session.next(
+      (m) =>
+        (m.kind === 'override' &&
+          m.cmd === 'B03' &&
+          m.override.target === entry.target &&
+          m.override.targetId === entry.targetId &&
+          m.override.mode === OVERRIDE_MODE.AWAY) ||
+        (m.kind === 'error' && m.about === 'A03'),
+      TIMINGS.commandAnswerBy - TIMINGS.protectiveWait,
+    );
     if (!session.write(line)) return false;
     entry.sends += 1;
+    this.awaiting.add(entry);
     this.saveMemory();
-    return true;
+    return reply.then((m) => {
+      this.awaiting.delete(entry);
+      if (m?.kind === 'override') return 'ok';
+      if (m?.kind === 'error') {
+        if (ambiguous) return undefined;
+        // Refused by the hub: sending it again changes nothing.
+        this.memory.pending = this.memory.pending.filter((p) => p !== entry);
+        this.saveMemory();
+        return { refused: m.message };
+      }
+      if (session === this.session && !session.closed) session.close('no-answer');
+      this.armRetry();
+      return undefined;
+    });
   }
 
   /** Every pending away command still in time, written at once (a new session, a retry). */
   sendPending() {
     this.prunePending();
-    for (const entry of this.memory.pending) this.writeAway(entry);
+    for (const entry of this.memory.pending) {
+      if (!this.awaiting.has(entry)) this.writeAway(entry);
+    }
     this.armRetry();
   }
 
-  /** Drops the away commands past their 15 min or their 3 sends (wall clock: they live in /data). */
+  /**
+   * Drops the away commands past their 15 min, or written 6 times without an
+   * answer (each time in a new session); wall clock: they live in /data.
+   */
   prunePending() {
     const now = this.now();
     const before = this.memory.pending.length;
     this.memory.pending = this.memory.pending.filter(
       (p) =>
-        p.at <= now && now - p.at <= TIMINGS.protectiveLife && p.sends < TIMINGS.protectiveSends,
+        p.at <= now &&
+        now - p.at <= TIMINGS.protectiveLife &&
+        (p.sends < TIMINGS.protectiveSends || this.awaiting.has(p)),
     );
     if (before !== this.memory.pending.length) this.saveMemory();
   }

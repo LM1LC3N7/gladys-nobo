@@ -174,7 +174,9 @@ test('a closed session opens again after 5 s; nothing stale published meanwhile'
   s.hub.unreachable = false;
   await s.wait(2 * MINUTE);
   assert.equal(s.gladys.fake.connectionStatus.connected, true);
-  assert.equal(s.hub.lines.filter((l) => l === 'G00').length, 2, 'downloaded again (§5.7)');
+  assert.equal(s.hub.lines.filter((l) => l.startsWith('HELLO')).length, 2);
+  const last = s.hub.lines.lastIndexOf('HANDSHAKE');
+  assert.equal(s.hub.lines[last + 1], 'G00', 'downloaded again (§5.7)');
 });
 
 test('a restart never connects sooner than 5 s after the last attempt', async (t) => {
@@ -253,6 +255,31 @@ test('a hub that never ends G00 is closed after 20 s and opened again', async (t
   assert.equal(s.gladys.fake.states.length, 0, 'an incomplete download publishes nothing');
 });
 
+test('a G00 of more than 2000 lines closes the session', async (t) => {
+  const s = await setup({ start: false });
+  t.after(() => s.app.shutdown());
+  const original = s.hub.createConnection;
+  s.app.createConnection = (o) => {
+    const sock = original(o);
+    const handle = sock.handle.bind(sock);
+    sock.handle = (line) =>
+      line === 'G00'
+        ? sock.send(
+            'H00',
+            ...Array.from(
+              { length: 2100 },
+              (_, i) => `Y02 2340000${String(i).padStart(5, '0')} 20`,
+            ),
+          )
+        : handle(line);
+    return sock;
+  };
+  await s.gladys.connect();
+  await s.wait(SECOND);
+  assert.equal(s.app.sessionState, 'idle');
+  assert.match(s.lines.join('\n'), /too-long|closed/);
+});
+
 test('keepalive 14 s after our last line, whatever it was', async (t) => {
   const s = await setup();
   t.after(() => s.app.shutdown());
@@ -286,6 +313,13 @@ test('the serial never reaches the logs, the statuses, /data, the states nor the
   s.hub.dropAll();
   await s.wait(10 * SECOND);
   assert.doesNotMatch(everything(s), new RegExp(SERIAL));
+});
+
+test('an invalid time zone: a clear status, no connection (its time would go to the hub)', async (t) => {
+  const s = await setup({ config: { ...CONFIG, timezone: 'Mars/Olympus' } });
+  t.after(() => s.app.shutdown());
+  assert.equal(s.hub.connections, 0);
+  assert.match(s.gladys.fake.connectionStatus.message.en, /time zone is not a known IANA name/);
 });
 
 test('the language: English names when asked', async (t) => {

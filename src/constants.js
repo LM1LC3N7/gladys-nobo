@@ -114,7 +114,7 @@ export const TIMINGS = {
   syncTimeout: 20 * SECOND,
   /** The hub closes after 30 s without traffic: a keepalive after 14 s of silence from us. */
   keepalive: 14 * SECOND,
-  /** Nothing received for this long while connected: the session is closed and opened again. */
+  /** Nothing received for this long: everything asked again (G00); no end within syncTimeout = frozen, closed. */
   idleTimeout: 75 * SECOND,
   /** A dead session is opened again after 5 s, 10 s, 20 s… up to 5 min. */
   reconnect: [
@@ -144,10 +144,10 @@ export const TIMINGS = {
   commandAnswerBy: 3_500,
   /** An away command waits at most this long for the answer of a command in flight before it is written. */
   protectiveWait: 250,
-  /** An away command not confirmed is written again (3 times at most), until this deadline. */
+  /** An away command not confirmed is written again (6 times at most, a new session each time), until this deadline. */
   protectiveRetry: 10 * SECOND,
   protectiveLife: 15 * MINUTE,
-  protectiveSends: 3,
+  protectiveSends: 6,
   /** The configuration of Gladys not read: new tries 5 s, 15 s, 1 min, then every 5 min. */
   configRetry: [5 * SECOND, 15 * SECOND, MINUTE, 5 * MINUTE],
   /** /data unreadable: read again every 10 s. */

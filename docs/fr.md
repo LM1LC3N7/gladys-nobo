@@ -69,16 +69,26 @@ plusieurs zones attend son tour).
 Le mode absent (hors gel) d'une zone ou de toute la maison est la commande
 protectrice : ni option, ni session absente, ni file pleine ne le refusent. Il
 passe devant les commandes en attente, et celles de sa cible (toutes, pour
-toute la maison) sont abandonnées. Tant que le hub ne l'a pas confirmé, il est
-gardé dans `/data`, envoyé juste après la prochaine poignée de main (aussi
-après un redémarrage), et réécrit toutes les 10 s, 3 fois au plus en
-15 minutes. Il n'est plus renvoyé dès qu'une commande plus récente de la même
-cible est partie, ou dès que le hub signale un autre mode posé dessus
-(application, interrupteur).
+toute la maison) sont abandonnées. Tant que le hub ne le montre pas appliqué,
+il est gardé dans `/data` et réécrit : si le hub ne répond pas en 3,5 s, la
+connexion est jugée figée, fermée, et le mode absent écrit sur la suivante,
+juste après son téléchargement (6 fois au plus en 15 minutes). Après un
+redémarrage, il part dès que Gladys a redonné la configuration (le hub demande
+le numéro de série, jamais écrit dans `/data`). Il n'est plus renvoyé dès
+qu'un mode plus récent de la même cible est parti de Gladys, ou dès que le hub
+montre un autre mode posé ensuite (application, interrupteur) ; un changement
+de température ne l'arrête pas.
+
+Le mode absent de toute la maison n'atteint pas les zones qui n'autorisent pas
+les dérogations (un réglage de la zone dans l'application Nobø) : réglez ces
+zones une par une.
 
 Il peut quand même échouer, et Gladys le dit : quand le hub le refuse (une
-réponse `E00`, son message affiché), ou quand le hub reste injoignable
-15 minutes.
+réponse `E00`, son message affiché), ou quand le hub ne le montre pas en
+15 minutes ou 6 envois.
+
+Un hub qui n'envoie rien pendant 75 s est interrogé de nouveau ; sans réponse
+en 20 s, la connexion est fermée puis rouverte.
 
 ## États et dépannage
 

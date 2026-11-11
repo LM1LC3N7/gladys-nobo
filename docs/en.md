@@ -66,14 +66,25 @@ its turn).
 The away mode (anti-frost) of a zone or of the whole house is the protective
 command: no option, no missing session, no full queue refuses it. It goes
 before the commands waiting, and those of its target (all of them, for the
-whole house) are dropped. Until the hub confirms it, it is kept in `/data`,
-sent right after the next handshake (also after a restart), and written again
-every 10 s, 3 times at most within 15 minutes. It is not sent again once a
-newer command of the same target has left, or once the hub reports another
-mode set on it (from the app, a switch).
+whole house) are dropped. Until the hub shows it applied, it is kept in
+`/data` and written again: when the hub does not answer within 3.5 s, the
+connection is taken as frozen, closed, and the away mode written on the next
+one, right after its download (6 times at most within 15 minutes). After a
+restart, it leaves once Gladys has given the configuration back (the hub asks
+for the serial number, which is never written to `/data`). It is not sent
+again once a newer mode of the same target has left from Gladys, or once the
+hub shows another mode set on it later (from the app, a switch); a
+temperature change does not stop it.
+
+The away mode of the whole house does not reach the zones that do not allow
+overrides (a setting of the zone in the Nobø app): set those zones one by one.
 
 It can still fail, and Gladys says so: when the hub refuses it (an `E00`
-answer, its message shown), or when the hub stays unreachable for 15 minutes.
+answer, its message shown), or when the hub does not show it within 15
+minutes or 6 sends.
+
+A hub that sends nothing for 75 s is asked for its data again; without an
+answer within 20 s the connection is closed and opened again.
 
 ## Status and troubleshooting
 

@@ -7,7 +7,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { memoryStore } from '../src/store.js';
-import { HUB_KEY } from './helpers/fakeHub.js';
+import { HUB_KEY, defaultWorld } from './helpers/fakeHub.js';
 import { ADDRESS, CONFIG, HF, MINUTE, NOW, SECOND, ZF, settle, setup } from './helpers/app.js';
 
 const ALLOW = { ...CONFIG, allow_modes: true, allow_setpoints: true };
@@ -93,6 +93,60 @@ test('temperature bounds: whole numbers 7 to 30, comfort never below eco', async
   assert.equal((await s.cmd(ZF(1, 'comfort-temperature'), 30)).success, true);
 });
 
+test('the temperature taken back from the hub is bounded too: out of 7–30 °C, nothing sent', async (t) => {
+  const world = defaultWorld();
+  world.zones[0].eco = 3;
+  world.zones[1].comfort = 45;
+  const s = await setup({ config: ALLOW, world });
+  t.after(() => s.app.shutdown());
+  let ack = await s.cmd(ZF(1, 'comfort-temperature'), 25);
+  assert.match(ack.error, /l’autre température de la zone/);
+  ack = await s.cmd(ZF(2, 'eco-temperature'), 16);
+  assert.match(ack.error, /l’autre température de la zone/);
+  assert.equal(written(s, 'U00').length, 0);
+  // Setting the wrong one itself works.
+  assert.equal((await s.cmd(ZF(1, 'eco-temperature'), 16)).success, true);
+  await s.wait(1500);
+  assert.equal(
+    s.gladys.fake.states.filter(
+      (x) => x.device_feature_external_id === ZF(2, 'comfort-temperature'),
+    ).length,
+    0,
+    'never published out of range',
+  );
+});
+
+test('white box: a command without a ready session never reaches the queue nor pump()', async (t) => {
+  const s = await setup({ config: ALLOW });
+  t.after(() => s.app.shutdown());
+  s.app.sessionState = 'syncing';
+  let pumps = 0;
+  const pump = s.app.pump.bind(s.app);
+  s.app.pump = () => {
+    pumps += 1;
+    return pump();
+  };
+  await assert.rejects(
+    s.app.enqueue({ ref: { hubKey: HUB_KEY, target: 1, targetId: 1 }, kind: 'mode', mode: 1 }),
+  );
+  assert.equal(pumps, 0);
+  assert.equal(s.app.queue.length, 0);
+});
+
+test('an error message of the hub is shown cut to 80 characters', async (t) => {
+  const s = await setup({ config: ALLOW });
+  t.after(() => s.app.shutdown());
+  const original = s.hub.createConnection;
+  void original;
+  s.hub.refuseA03 = true;
+  const sock = [...s.hub.open][0];
+  const handle = sock.handle.bind(sock);
+  sock.handle = (line) =>
+    line.startsWith('A03') ? sock.send(`E00 A03 ${'x'.repeat(300)}`) : handle(line);
+  const ack = await s.cmd(ZF(1, 'mode'), 'comfort');
+  assert.equal(ack.error, `Le hub a refusé la commande (${'x'.repeat(80)}).`);
+});
+
 test('answers: none = sent without confirmation; E00 = refused; other values = not applied', async (t) => {
   const s = await setup({ config: ALLOW });
   t.after(() => s.app.shutdown());
@@ -119,6 +173,13 @@ test('without a downloaded session: nothing sent (but away)', async (t) => {
   await s.wait(100);
   const ack = await s.cmd(ZF(1, 'mode'), 'comfort');
   assert.match(ack.error, /Rien envoyé : le hub n’est pas connecté/);
+  // A value out of bounds is told as such, session or not.
+  for (const value of [6, 31, 21.5]) {
+    assert.match(
+      (await s.cmd(ZF(1, 'comfort-temperature'), value)).error,
+      /un nombre entier de 7 à 30 °C est attendu/,
+    );
+  }
   // An option off is told as such, session or not.
   await s.app.configUpdated(CONFIG);
   assert.match((await s.cmd(ZF(1, 'mode'), 'comfort')).error, /commandes de mode sont désactivées/);
@@ -161,7 +222,7 @@ test('a command that cannot leave by 3 s is refused unsent', async (t) => {
 });
 
 test('a scene on 5 slow zones: the 5 set, one at a time', async (t) => {
-  const world = (await import('./helpers/fakeHub.js')).defaultWorld();
+  const world = defaultWorld();
   for (let id = 3; id <= 5; id += 1) {
     world.zones.push({ id, name: `Room${id}`, profileId: 1, comfort: 21, eco: 16, allow: 1 });
   }
@@ -197,7 +258,7 @@ test('away: never refused by the option; a constant override in away mode, confi
   assert.equal(s.gladys.fake.lastState(ZF(1, 'mode-in-force')), 'away');
 });
 
-test('away without a session: kept in /data, sent right after the handshake, before G00', async (t) => {
+test('away without a session: kept in /data, sent right after the download of the next session', async (t) => {
   const s = await setup();
   t.after(() => s.app.shutdown());
   s.hub.unreachable = true;
@@ -207,6 +268,7 @@ test('away without a session: kept in /data, sent right after the handshake, bef
   assert.match(ack.error, /Mode absent retenu/);
   assert.equal(s.store.data.pending.length, 1);
   assert.deepEqual(Object.keys(s.store.data.pending[0]).sort(), [
+    'afterId',
     'at',
     'hubKey',
     'sends',
@@ -216,11 +278,11 @@ test('away without a session: kept in /data, sent right after the handshake, bef
   s.hub.unreachable = false;
   await s.wait(11 * SECOND);
   const after = s.hub.lines.slice(s.hub.lines.lastIndexOf('HANDSHAKE'));
-  assert.deepEqual(after.slice(0, 3), ['HANDSHAKE', 'A03 -1 3 3 -1 -1 1 1', 'G00']);
+  assert.deepEqual(after.slice(0, 3), ['HANDSHAKE', 'G00', 'A03 -1 3 3 -1 -1 1 1']);
   assert.deepEqual(s.store.data.pending, []);
 });
 
-test('away after a restart: sent from /data at the first session, even before the config was read twice', async (t) => {
+test('away after a restart: sent from /data at the first session', async (t) => {
   const store = memoryStore({
     pending: [{ hubKey: HUB_KEY, target: 0, targetId: -1, at: NOW - MINUTE, sends: 1 }],
   });
@@ -229,10 +291,30 @@ test('away after a restart: sent from /data at the first session, even before th
   assert.deepEqual(s.hub.lines.slice(0, 4), [
     'HELLO 1.1 102000000123 20261111110000',
     'HANDSHAKE',
-    'A03 -1 3 3 -1 -1 0 -1',
     'G00',
+    'A03 -1 3 3 -1 -1 0 -1',
   ]);
   assert.deepEqual(store.data.pending, []);
+});
+
+test('away in /data: not sent over a newer choice made in the app, nor when already applied', async (t) => {
+  const world = defaultWorld();
+  // Comfort for 2 hours, set in the app after the away command (id above its afterId).
+  world.overrides.push({ id: 12, mode: 1, type: 1, end: '202611111300', target: 1, targetId: 1 });
+  world.overrides.push({ id: 13, mode: 3, type: 3, target: 1, targetId: 2 });
+  const store = memoryStore({
+    pending: [
+      { hubKey: HUB_KEY, target: 1, targetId: 1, at: NOW - MINUTE, sends: 1, afterId: 11 },
+      { hubKey: HUB_KEY, target: 1, targetId: 2, at: NOW - MINUTE, sends: 1, afterId: 11 },
+    ],
+  });
+  const s = await setup({ store, world });
+  t.after(() => s.app.shutdown());
+  await s.wait(MINUTE);
+  assert.equal(written(s, 'A03').length, 0);
+  assert.deepEqual(store.data.pending, []);
+  assert.equal(s.gladys.fake.lastState(ZF(1, 'mode')), 'comfort', 'the dated override is read');
+  assert.equal(s.gladys.fake.lastState(ZF(1, 'mode-in-force')), 'comfort');
 });
 
 test('an away of 20 min ago, or dated in the future, is not replayed', async (t) => {
@@ -247,14 +329,78 @@ test('an away of 20 min ago, or dated in the future, is not replayed', async (t)
   assert.equal(written(s, 'A03').length, 0);
 });
 
-test('away unconfirmed: written again every 10 s, 3 times at most', async (t) => {
+test('away without an answer: the session is closed, the away written again on the next, 6 times at most', async (t) => {
   const s = await setup();
   t.after(() => s.app.shutdown());
   s.hub.silent = true;
   const ack = await s.cmd(ZF(1, 'mode'), 'away');
-  assert.match(ack.error, /Mode absent retenu/);
+  assert.match(ack.error, /Mode absent envoyé, sans confirmation/);
+  assert.equal(s.store.data.pending.length, 1, 'written is not confirmed');
+  await s.wait(SECOND);
+  assert.equal(s.hub.connections, 1);
+  await s.wait(5 * SECOND);
+  assert.equal(s.hub.connections, 2, 'a new session at once (5 s), not a backoff');
+  await s.wait(70 * SECOND);
+  assert.equal(written(s, 'A03').length, 6, 'each new session at once, never a growing backoff');
+  // Those closings were not failures: a later loss of the hub is retried after 5 s.
+  const before = s.hub.connections;
+  s.hub.dropAll();
+  await s.wait(6 * SECOND);
+  assert.equal(s.hub.connections, before + 1);
+  s.hub.silent = true;
   await s.wait(5 * MINUTE);
-  assert.equal(written(s, 'A03').length, 3);
+  assert.equal(written(s, 'A03').length, 6);
+  const connections = s.hub.connections;
+  assert.ok(connections <= 8, `${connections} sessions`);
+  // Each send in its own session.
+  const perSession = s.hub.lines
+    .join('\n')
+    .split('HANDSHAKE')
+    .map((x) => (x.match(/A03/g) ?? []).length);
+  assert.ok(
+    perSession.every((n) => n <= 1),
+    String(perSession),
+  );
+});
+
+test('a frozen hub: the away closes the session, and is applied once the hub answers again', async (t) => {
+  const s = await setup();
+  t.after(() => s.app.shutdown());
+  s.hub.frozen = true;
+  const ack = await s.cmd(ZF(1, 'mode'), 'away');
+  assert.match(ack.error, /sans confirmation/);
+  await s.wait(30 * SECOND);
+  assert.notEqual(s.app.sessionState, 'ready');
+  assert.equal(s.store.data.pending.length, 1);
+  s.hub.frozen = false;
+  await s.wait(3 * MINUTE);
+  assert.equal(s.app.sessionState, 'ready');
+  assert.deepEqual(s.store.data.pending, []);
+  assert.equal(s.gladys.fake.lastState(ZF(1, 'mode')), 'away');
+});
+
+test('a frozen hub without any command: asked again after 75 s of silence, closed 20 s later', async (t) => {
+  const s = await setup();
+  t.after(() => s.app.shutdown());
+  s.hub.frozen = true;
+  await s.wait(74 * SECOND);
+  assert.equal(s.hub.lines.filter((l) => l === 'G00').length, 1);
+  await s.wait(2 * SECOND);
+  assert.equal(s.hub.lines.filter((l) => l === 'G00').length, 2);
+  assert.equal(s.app.sessionState, 'ready');
+  await s.wait(21 * SECOND);
+  assert.notEqual(s.app.sessionState, 'ready');
+  s.hub.frozen = false;
+  await s.wait(MINUTE);
+  assert.equal(s.app.sessionState, 'ready');
+});
+
+test('a live hub answering the probe keeps its session', async (t) => {
+  const s = await setup();
+  t.after(() => s.app.shutdown());
+  await s.wait(10 * MINUTE);
+  assert.equal(s.hub.connections, 1);
+  assert.equal(s.app.sessionState, 'ready');
 });
 
 test('away goes before the waiting commands and drops those of its target', async (t) => {
@@ -295,41 +441,44 @@ test('the whole-house away drops every waiting command of the hub', async (t) =>
   assert.equal(written(s, 'A03').length, 1);
 });
 
-test('a newer command of the target sent after an unconfirmed away: the away is not written again', async (t) => {
+test('a newer mode of the target that left after an unconfirmed away: the away is not sent again', async (t) => {
   const s = await setup({ config: ALLOW });
   t.after(() => s.app.shutdown());
   s.hub.silent = true;
-  await s.cmd(ZF(1, 'mode'), 'away');
+  const away = s.gladys.fake.setValue({}, { external_id: ZF(1, 'mode') }, 'away');
+  await settle();
+  const comfort = s.gladys.fake.setValue({}, { external_id: ZF(1, 'mode') }, 'comfort');
+  await Promise.all([s.act(away), s.act(comfort)]);
   s.hub.silent = false;
-  assert.deepEqual(await s.cmd(ZF(1, 'mode'), 'comfort'), { success: true });
-  await s.wait(MINUTE);
-  assert.deepEqual(written(s, 'A03'), ['A03 -1 3 3 -1 -1 1 1', 'A03 -1 1 3 -1 -1 1 1']);
-  // But a command of another zone does not cancel it.
-  s.hub.silent = true;
-  await s.cmd(ZF(1, 'mode'), 'away');
-  s.hub.silent = false;
-  await s.cmd(ZF(2, 'mode'), 'comfort');
-  await s.wait(11 * SECOND);
-  assert.equal(written(s, 'A03').filter((l) => l === 'A03 -1 3 3 -1 -1 1 1').length, 3);
-});
-
-test('a newer command of the target that left without an answer also stops the away resend', async (t) => {
-  const s = await setup({ config: ALLOW });
-  t.after(() => s.app.shutdown());
-  s.hub.silent = true;
-  await s.cmd(ZF(1, 'mode'), 'away');
-  const ack = await s.cmd(ZF(1, 'mode'), 'comfort');
-  assert.match(ack.error, /sans confirmation/);
   await s.wait(MINUTE);
   assert.equal(written(s, 'A03').filter((l) => l === 'A03 -1 3 3 -1 -1 1 1').length, 1);
+  assert.deepEqual(s.store.data.pending, []);
 });
 
-test('a new mode set from the app (B03 pushed) stops the resend of an unconfirmed away', async (t) => {
+test('a temperature of the target does not stop the away resend; another zone neither', async (t) => {
+  const s = await setup({ config: ALLOW });
+  t.after(() => s.app.shutdown());
+  s.hub.silent = true;
+  const away = s.gladys.fake.setValue({}, { external_id: ZF(1, 'mode') }, 'away');
+  await settle();
+  const setpoint = s.gladys.fake.setValue({}, { external_id: ZF(1, 'comfort-temperature') }, 21);
+  const other = s.gladys.fake.setValue({}, { external_id: ZF(2, 'mode') }, 'comfort');
+  await Promise.all([s.act(away), s.act(setpoint), s.act(other)]);
+  s.hub.silent = false;
+  await s.wait(MINUTE);
+  assert.equal(written(s, 'A03').filter((l) => l === 'A03 -1 3 3 -1 -1 1 1').length, 2);
+  assert.deepEqual(s.store.data.pending, [], 'confirmed on the next session');
+});
+
+test('a new mode set from the app (B03 pushed, with an end time) stops the resend of an unconfirmed away', async (t) => {
   const s = await setup();
   t.after(() => s.app.shutdown());
   s.hub.silent = true;
-  await s.cmd(ZF(1, 'mode'), 'away');
-  s.hub.push('B03 50 1 3 -1 -1 1 1');
+  const away = s.gladys.fake.setValue({}, { external_id: ZF(1, 'mode') }, 'away');
+  await settle();
+  s.hub.push('B03 50 1 1 202611111300 -1 1 1');
+  await s.act(away);
+  s.hub.silent = false;
   await s.wait(MINUTE);
   assert.equal(written(s, 'A03').length, 1);
 });

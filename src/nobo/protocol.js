@@ -129,21 +129,18 @@ function profileOf(f) {
   return { id, name: displayName(rawName), slots };
 }
 
+/** An end or start time of an override: -1 (none), 12 digits `yyyyMMddHHmm`, else null (unreadable). */
+export function overrideTime(text) {
+  if (text === '-1') return -1;
+  return typeof text === 'string' && /^\d{12}$/.test(text) ? text : null;
+}
+
 function overrideOf(f) {
-  const values = f.slice(1, 8).map(int);
-  if (values.length < 7 || values.some((v) => v === undefined)) return undefined;
-  const [id, mode, type, end, start, target, targetId] = values;
-  return {
-    id,
-    mode,
-    type,
-    end: f[4],
-    start: f[5],
-    target,
-    targetId,
-    endValue: end,
-    startValue: start,
-  };
+  // The times are not integers (12 digits): an unreadable one is unknown, the line is kept.
+  const [id, mode, type] = f.slice(1, 4).map(int);
+  const [target, targetId] = f.slice(6, 8).map(int);
+  if ([id, mode, type, target, targetId].some((v) => v === undefined)) return undefined;
+  return { id, mode, type, end: overrideTime(f[4]), start: overrideTime(f[5]), target, targetId };
 }
 
 function hubOf(f) {

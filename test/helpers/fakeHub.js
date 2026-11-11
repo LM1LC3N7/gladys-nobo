@@ -90,7 +90,7 @@ export function fakeHub(world = defaultWorld(), { clock } = {}) {
       setImmediate(() => this.emit('close'));
     }
     handle(line) {
-      if (this.destroyed) return;
+      if (this.destroyed || hub.frozen) return;
       const f = line.split(' ');
       switch (f[0]) {
         case 'HELLO':
